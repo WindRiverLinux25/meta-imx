@@ -11,6 +11,8 @@ SRCREV = "78d717bb22819df9d988ef1b4e3cca1acf61095d"
 
 S = "${WORKDIR}/git/vvcam/v4l2"
 
+MODULES_MODULE_SYMVERS_LOCATION = "dwe"
+
 inherit module
 
 MODULES_MODULE_SYMVERS_LOCATION = "dwe"
