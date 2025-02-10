@@ -61,6 +61,6 @@ SOLIBS = ".so"
 FILES_SOLIBSDEV = ""
 
 # Work around do_package_qa error
-INSANE_SKIP:${PN} += "buildpaths"
+INSANE_SKIP:${PN} += "buildpaths rpaths"
 
 COMPATIBLE_MACHINE = "(mx95-nxp-bsp)"
