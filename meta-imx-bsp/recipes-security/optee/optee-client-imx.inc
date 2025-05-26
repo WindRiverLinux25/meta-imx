@@ -3,8 +3,10 @@ require recipes-security/optee/optee-client.inc
 DEPENDS += "util-linux-libuuid"
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/optee-client:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/optee-client:${LAYER_PATH_meta-arm}/recipes-security/optee/optee-client:"
 SRC_URI:remove = "git://github.com/OP-TEE/optee_client.git;branch=master;protocol=https"
 SRC_URI:prepend = "${OPTEE_CLIENT_SRC};branch=${SRCBRANCH} "
+SRC_URI:append = " file://0001-tee-supplicant-update-udev-systemd-install-code.patch"
 OPTEE_CLIENT_SRC ?= "git://github.com/nxp-imx/imx-optee-client.git;protocol=https"
 
 inherit pkgconfig
