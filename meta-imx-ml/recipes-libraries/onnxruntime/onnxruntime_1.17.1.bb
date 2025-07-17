@@ -106,6 +106,7 @@ do_configure:prepend() {
     export HTTPS_PROXY=${https_proxy}
     export http_proxy=${http_proxy}
     export https_proxy=${https_proxy}
+    export GIT_SSL_CAINFO=${GIT_SSL_CAINFO}
 }
 
 do_compile[network] = "1"
@@ -116,6 +117,7 @@ do_compile:prepend() {
         export HTTPS_PROXY=${https_proxy}
         export http_proxy=${http_proxy}
         export https_proxy=${https_proxy}
+        export GIT_SSL_CAINFO=${GIT_SSL_CAINFO}
     fi
 }
 
