@@ -1,0 +1,28 @@
+From c8162baa610aee8e3222da2339909f130cacd578 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 14 Jun 2024 17:04:02 +0800
+Subject: [PATCH 73/75] MMFMWK-9390 v4l2: Add ARGB2101010 support for imx95
+ wave6 precoding
+
+Upstream-Status: Pending
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/8154>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 746e4e0..7838143 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -122,6 +122,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (BGR32, BGRA),     GST_V4L2_RAW},
+   {MAP_FMT (RGB32, xRGB),     GST_V4L2_RAW},
+   {MAP_FMT (RGB32, ARGB),     GST_V4L2_RAW},
++  {MAP_FMT (ARGB2101010, BGR10A2_LE), GST_V4L2_RAW},
+ 
+   /* Grey formats */
+   {MAP_FMT (GREY, GRAY8),       GST_V4L2_RAW},
+-- 
+2.43.0
+

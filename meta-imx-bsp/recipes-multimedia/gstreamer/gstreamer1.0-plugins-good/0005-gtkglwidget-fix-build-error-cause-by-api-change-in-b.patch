@@ -1,0 +1,38 @@
+From d2727fef76470c768f2ed5a2a8d369a9a43677b0 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 16 Apr 2018 11:27:39 +0800
+Subject: [PATCH 05/75] gtkglwidget: fix build error cause by api change in
+ base-gl
+
+commit 908c6c5d422ab069b5e642b06e536be2afea1816
+Author: Haihua Hu <jared.hu@nxp.com>
+Date:   Thu Apr 12 16:22:25 2018 +0800
+
+    gloverlaycompositor: add subtitle rotate support follow video
+
+    https://bugzilla.gnome.org/show_bug.cgi?id=790470
+
+Upstream-Status: Pending
+
+(cherry picked from commit b08bb5bbd607be558a9b0668059890c4a28ab0e3)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/gtk/gtkgstglwidget.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ext/gtk/gtkgstglwidget.c b/ext/gtk/gtkgstglwidget.c
+index bb74ce0..1e1a7ae 100644
+--- a/ext/gtk/gtkgstglwidget.c
++++ b/ext/gtk/gtkgstglwidget.c
+@@ -381,7 +381,7 @@ gtk_gst_gl_widget_render (GtkGLArea * widget, GdkGLContext * context)
+       base_widget->buffer, context);
+ 
+   _redraw_texture (GTK_GST_GL_WIDGET (widget), priv->current_tex);
+-  gst_gl_overlay_compositor_draw_overlays (priv->overlay_compositor);
++  gst_gl_overlay_compositor_draw_overlays (priv->overlay_compositor, NULL);
+ 
+   gst_gl_insert_debug_marker (priv->other_context, "texture %u redrawn",
+       priv->current_tex);
+-- 
+2.43.0
+

@@ -1,0 +1,35 @@
+From afda2d40a9b75035df52c5caf61c881e5be170fb Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 21 Mar 2024 17:18:18 +0800
+Subject: [PATCH 58/75] v4l2: limit the encoded buffer size between 256k and 4M
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index d9d9fba..f94e214 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -57,6 +57,7 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
+ #define DEFAULT_PROP_IO_MODE            GST_V4L2_IO_AUTO
+ 
+ #define ENCODED_BUFFER_MIN_SIZE         (256 * 1024)
++#define ENCODED_BUFFER_MAX_SIZE         (4 * 1024 * 1024)
+ #define GST_V4L2_DEFAULT_WIDTH          320
+ #define GST_V4L2_DEFAULT_HEIGHT         240
+ 
+@@ -3707,7 +3708,7 @@ calculate_max_sizeimage (GstV4l2Object * v4l2object, guint pixel_bitdepth)
+   max_height = v4l2object->max_height;
+   sizeimage = max_width * max_height * pixel_bitdepth / 8 / 2;
+ 
+-  return MAX (ENCODED_BUFFER_MIN_SIZE, sizeimage);
++  return CLAMP (sizeimage, ENCODED_BUFFER_MIN_SIZE, ENCODED_BUFFER_MAX_SIZE);
+ }
+ 
+ static gboolean
+-- 
+2.43.0
+

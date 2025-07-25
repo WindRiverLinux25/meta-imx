@@ -1,0 +1,54 @@
+From 38b0d6891551583fdd8f82e3b10a28a754baa8c4 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Fri, 22 Jul 2022 13:24:58 +0800
+Subject: [PATCH 38/75] LF-6577 v4l2: add capture buffer check and resize to
+ avoid deadlock issue when seek
+
+in some cases, the total size of buffer is greater than
+the pool configured size. Need to resize it to avoid free
+buffer when release it.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2bufferpool.c | 20 +++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index 256eafe..e06b22a 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -766,9 +766,27 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+       if (!(old_buffer_state & BUFFER_STATE_OUTSTANDING)) {
+         if (V4L2_TYPE_IS_OUTPUT (pool->obj->type))
+           gst_v4l2_buffer_pool_complete_release_buffer (bpool, buffer, FALSE);
++        else {
++          /* in some cases, the total size of buffer is
++          greater than the pool configured size. Need to
++          resize it to avoid free buffer when release it */
++          gsize buf_size;
++          gsize offset;
++
++          buf_size = gst_buffer_get_size(buffer);
++          if (obj->info.size < buf_size) {
++            gst_buffer_get_sizes (buffer, &offset, NULL);
++            gst_buffer_resize (buffer, -offset, obj->info.size);
++
++            GST_DEBUG_OBJECT (pool, "pool size: %" G_GSIZE_FORMAT
++            ", capture buffer size: %" G_GSIZE_FORMAT
++            ", need to resize capture buffer to avoid free it",
++            obj->info.size, buf_size);
++          }
+ 
+-        else                    /* Don't re-enqueue capture buffer on stop */
++          /* Don't re-enqueue capture buffer on stop */
+           pclass->release_buffer (bpool, buffer);
++        }
+       }
+ 
+       g_atomic_int_add (&pool->num_queued, -1);
+-- 
+2.43.0
+

@@ -1,0 +1,31 @@
+From 8ecb26b831c17e3c98fd064a972a1010dc06d830 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 29 Apr 2024 15:14:15 +0800
+Subject: [PATCH 61/75] MMFMWK-9374 v4l2: Adjust encoded buffer size
+
+Enlarge encoded buffer size to
+[max_width * max_height * (pixel_bitdepth / 8) * (3 / 2)],
+and limit it between 256kB and 4MB.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 3adffb5..469f965 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3711,7 +3711,7 @@ calculate_max_sizeimage (GstV4l2Object * v4l2object, guint pixel_bitdepth)
+ 
+   max_width = v4l2object->max_width;
+   max_height = v4l2object->max_height;
+-  sizeimage = max_width * max_height * pixel_bitdepth / 8 / 2;
++  sizeimage = max_width * max_height * (pixel_bitdepth / 8) * (3 / 2);
+ 
+   return CLAMP (sizeimage, ENCODED_BUFFER_MIN_SIZE, ENCODED_BUFFER_MAX_SIZE);
+ }
+-- 
+2.43.0
+

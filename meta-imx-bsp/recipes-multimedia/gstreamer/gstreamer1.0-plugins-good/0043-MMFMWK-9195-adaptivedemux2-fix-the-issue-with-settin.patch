@@ -1,0 +1,39 @@
+From c182d142fdeef0c198285faec67d57dc14a83f58 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Tue, 21 Feb 2023 11:12:37 +0800
+Subject: [PATCH 43/75] MMFMWK-9195 adaptivedemux2: fix the issue with setting
+ range start during download
+
+For adaptivedemux2,the range start value is fixed to 0 if it within the first KB of the file.
+Need fix it to avoid downloading the header and index data repeatedly.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/adaptivedemux2/downloadhelper.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/ext/adaptivedemux2/downloadhelper.c b/ext/adaptivedemux2/downloadhelper.c
+index ebf9dc0..6019b8f 100644
+--- a/ext/adaptivedemux2/downloadhelper.c
++++ b/ext/adaptivedemux2/downloadhelper.c
+@@ -877,12 +877,14 @@ downloadhelper_submit_request (DownloadHelper * dh,
+     return FALSE;
+   }
+ 
++#if 0
+   /* NOTE: There was a bug where Akamai servers return the
+    * wrong result for a range request on small files. To avoid
+    * it if the range starts within the first KB of the file, just
+    * start at 0 instead */
+   if (request->range_start < 1024)
+     request->range_start = 0;
++#endif
+ 
+   msg_headers = _soup_message_get_request_headers (msg);
+ 
+-- 
+2.43.0
+

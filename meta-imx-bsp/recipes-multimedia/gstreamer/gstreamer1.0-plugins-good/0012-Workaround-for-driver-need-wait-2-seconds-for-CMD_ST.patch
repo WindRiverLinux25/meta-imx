@@ -1,0 +1,35 @@
+From 05d0060b8043ffe0553c982d8c6f0abfd2d92303 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Wed, 23 May 2018 14:18:52 -0700
+Subject: [PATCH 12/75] Workaround for driver need wait 2 seconds for CMD_STOP.
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+
+(cherry picked from commit 66a80d5d9dee870453b24a53da2803415a6a88bb)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 8c9878f..530fc5b 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -586,6 +586,12 @@ gst_v4l2_video_dec_finish (GstVideoDecoder * decoder)
+   if (gst_v4l2_decoder_cmd (self->v4l2output, V4L2_DEC_CMD_STOP, 0)) {
+     GstTask *task;
+ 
++    // Workaround as CMD_STOP will wait long time.
++    if (gst_pad_get_task_state (decoder->srcpad) != GST_TASK_STARTED) {
++      GST_VIDEO_DECODER_STREAM_LOCK (decoder);
++      goto done;
++    }
++
+     GST_OBJECT_LOCK (decoder->srcpad);
+     task = GST_PAD_TASK (decoder->srcpad);
+     if (task)
+-- 
+2.43.0
+

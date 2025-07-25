@@ -1,0 +1,87 @@
+From 2d36fe1a898f84c5cf9141150d1f514f2ac166d2 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 26 Dec 2023 16:53:18 +0800
+Subject: [PATCH 56/75] MMFMWK-9315 v4l2src: recalculate timestamp to avoid
+ getting multiple 0 timestamps
+
+When encoding with v4l2src and muxing the encoded file, baseparse
+will mark current buffer's pts as GST_CLOCK_TIME_NONE if it is equal
+to prev_pts, which causes muxer to report error "Buffer has no PTS".
+To avoid this, need to retry calculating pts if clock running time
+is lower than the buffer timestamp delay.
+
+Upstream-Status: Pending
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/5869>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2src.c | 32 ++++++++++----------------------
+ 1 file changed, 10 insertions(+), 22 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2src.c b/sys/v4l2/gstv4l2src.c
+index 3272480..ae479c3 100644
+--- a/sys/v4l2/gstv4l2src.c
++++ b/sys/v4l2/gstv4l2src.c
+@@ -1151,7 +1151,6 @@ gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
+   GstV4l2Src *v4l2src = GST_V4L2SRC (src);
+   GstV4l2Object *obj = v4l2src->v4l2object;
+   GstFlowReturn ret;
+-  GstClock *clock;
+   GstClockTime abs_time, base_time, timestamp, duration;
+   GstClockTime delay;
+   GstMessage *qos_msg;
+@@ -1197,26 +1196,9 @@ gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
+   timestamp = GST_BUFFER_TIMESTAMP (*buf);
+   duration = obj->duration;
+ 
+-  /* timestamps, LOCK to get clock and base time. */
++  /* timestamps, get base time. */
+   /* FIXME: element clock and base_time is rarely changing */
+-  GST_OBJECT_LOCK (v4l2src);
+-  if ((clock = GST_ELEMENT_CLOCK (v4l2src))) {
+-    /* we have a clock, get base time and ref clock */
+-    base_time = GST_ELEMENT (v4l2src)->base_time;
+-    gst_object_ref (clock);
+-  } else {
+-    /* no clock, can't set timestamps */
+-    base_time = GST_CLOCK_TIME_NONE;
+-  }
+-  GST_OBJECT_UNLOCK (v4l2src);
+-
+-  /* sample pipeline clock */
+-  if (clock) {
+-    abs_time = gst_clock_get_time (clock);
+-    gst_object_unref (clock);
+-  } else {
+-    abs_time = GST_CLOCK_TIME_NONE;
+-  }
++  base_time = gst_element_get_base_time (GST_ELEMENT (v4l2src));
+ 
+ retry:
+   if (!v4l2src->has_bad_timestamp && timestamp != GST_CLOCK_TIME_NONE) {
+@@ -1280,6 +1262,9 @@ retry:
+ 
+   /* set buffer metadata */
+ 
++  /* sample pipeline clock, reget it if retry */
++  abs_time = gst_element_get_current_clock_time (GST_ELEMENT (v4l2src));
++
+   if (G_LIKELY (abs_time != GST_CLOCK_TIME_NONE)) {
+     /* the time now is the time of the clock minus the base time */
+     timestamp = abs_time - base_time;
+@@ -1287,8 +1272,11 @@ retry:
+     /* adjust for delay in the device */
+     if (timestamp > delay)
+       timestamp -= delay;
+-    else
+-      timestamp = 0;
++    else {
++      /* This is to avoid generating duplicated 0 timestamps. Otherwise baseparse will mark
++         pts as invalid if it's the same with prev_ts, further cause qtmux to report error */
++      goto retry;
++    }
+   } else {
+     timestamp = GST_CLOCK_TIME_NONE;
+   }
+-- 
+2.43.0
+

@@ -1,0 +1,66 @@
+From c51a42a24c37be35bb0a86a9c8183aaf05829dcc Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Wed, 4 Sep 2019 11:40:16 -0700
+Subject: [PATCH 19/75] v4l2src: don't use export dmabuf for UVC as it use
+ vmalloc for video
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+(cherry picked from commit c3e6d3746063cf0caf683b4c5255e600233c2215)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 3 +++
+ sys/v4l2/gstv4l2object.h | 1 +
+ sys/v4l2/v4l2_calls.c    | 2 ++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 8dc7706..2f38c73 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3259,6 +3259,9 @@ gst_v4l2_object_is_dmabuf_supported (GstV4l2Object * v4l2object)
+   if (errno == ENOTTY)
+     ret = FALSE;
+ 
++  if (v4l2object->dont_use_dmabuf)
++    ret = FALSE;
++
+   return ret;
+ }
+ 
+diff --git a/sys/v4l2/gstv4l2object.h b/sys/v4l2/gstv4l2object.h
+index 93971a7..9b8f043 100644
+--- a/sys/v4l2/gstv4l2object.h
++++ b/sys/v4l2/gstv4l2object.h
+@@ -222,6 +222,7 @@ struct _GstV4l2Object {
+   /* Quirks */
+   /* Skips interlacing probes */
+   gboolean never_interlaced;
++  gboolean dont_use_dmabuf;
+   /* Allow to skip reading initial format through G_FMT. Some devices
+    * just fails if you don't call S_FMT first. (ex: M2M decoders) */
+   gboolean no_initial_format;
+diff --git a/sys/v4l2/v4l2_calls.c b/sys/v4l2/v4l2_calls.c
+index 672e723..00d57ec 100644
+--- a/sys/v4l2/v4l2_calls.c
++++ b/sys/v4l2/v4l2_calls.c
+@@ -603,6 +603,7 @@ gst_v4l2_open (GstV4l2Object * v4l2object, GstV4l2Error * error)
+   if (!strcmp ((char *) v4l2object->vcap.driver, "uvcusb") ||
+       !strcmp ((char *) v4l2object->vcap.driver, "uvcvideo")) {
+     v4l2object->never_interlaced = TRUE;
++    v4l2object->dont_use_dmabuf = TRUE;
+   }
+ 
+   if (!strcmp ((char *) v4l2object->vcap.driver, "vpu B0")) {
+@@ -695,6 +696,7 @@ gst_v4l2_dup (GstV4l2Object * v4l2object, GstV4l2Object * other)
+       v4l2object->vcap.card, v4l2object->videodev);
+ 
+   v4l2object->never_interlaced = other->never_interlaced;
++  v4l2object->dont_use_dmabuf = other->dont_use_dmabuf;
+   v4l2object->no_initial_format = other->no_initial_format;
+   v4l2object->is_amphion = other->is_amphion;
+ 
+-- 
+2.43.0
+

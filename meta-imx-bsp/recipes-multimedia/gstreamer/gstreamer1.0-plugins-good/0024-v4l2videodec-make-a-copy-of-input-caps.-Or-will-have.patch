@@ -1,0 +1,45 @@
+From 1db52720a16a334af30ea5e25e7153130add67fd Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Wed, 28 Oct 2020 11:15:44 +0800
+Subject: [PATCH 24/75] v4l2videodec: make a copy of input caps. Or will have
+ critical warning when remove colorimetry.
+
+Upstream-Status: Pending
+
+Signed-off-by: Bing Song <bing.song@nxp.com>
+
+(cherry picked from commit ca2fa62cfa36eeeb5590c46706c071c7cbd1a0fa)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index f016cb3..7b60989 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -267,6 +267,7 @@ gst_v4l2_video_dec_set_format (GstVideoDecoder * decoder,
+   gboolean ret = TRUE;
+   gboolean dyn_resolution = self->v4l2output->fmtdesc &&
+       (self->v4l2output->fmtdesc->flags & V4L2_FMT_FLAG_DYN_RESOLUTION);
++  GstCaps *caps;
+ 
+   GST_DEBUG_OBJECT (self, "Setting format: %" GST_PTR_FORMAT, state->caps);
+ 
+@@ -308,8 +309,11 @@ gst_v4l2_video_dec_set_format (GstVideoDecoder * decoder,
+   }
+ 
+   /* No V4L2_FMT_FLAG_DYN_RESOLUTION or no fmtdesc set yet */
+-  if (!dyn_resolution)
+-    ret = gst_v4l2_object_set_format (self->v4l2output, state->caps, &error);
++  if (!dyn_resolution) {
++    caps = gst_caps_copy (state->caps);
++    ret = gst_v4l2_object_set_format (self->v4l2output, caps, &error);
++    gst_caps_unref (caps);
++  }
+ 
+   if (GST_V4L2_IS_ACTIVE (self->v4l2output)) {
+     self->input_state = gst_video_codec_state_ref (state);
+-- 
+2.43.0
+

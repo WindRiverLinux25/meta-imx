@@ -1,0 +1,38 @@
+From dd987d03b796b51ec5a374c853424959eeaa8a0e Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Wed, 18 Apr 2018 12:39:19 -0700
+Subject: [PATCH 10/75] v4l2videodec: Don't reset decoder when caps change.
+
+VPU can handle resolution change.
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+
+Conflicts:
+	sys/v4l2/gstv4l2videodec.c
+(cherry picked from commit 64a458260076d5a597ed7a222896bc887200a6e0)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 6f256c7..d9f6b7d 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -312,6 +312,11 @@ gst_v4l2_video_dec_set_format (GstVideoDecoder * decoder,
+   if (!dyn_resolution)
+     ret = gst_v4l2_object_set_format (self->v4l2output, state->caps, &error);
+ 
++  if (GST_V4L2_IS_ACTIVE (self->v4l2output)) {
++    self->input_state = gst_video_codec_state_ref (state);
++    return TRUE;
++  }
++
+   if (ret)
+     self->input_state = gst_video_codec_state_ref (state);
+   else
+-- 
+2.43.0
+

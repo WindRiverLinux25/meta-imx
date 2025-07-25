@@ -1,0 +1,93 @@
+From ccdfcb92eb9db749c442b17c91d30f1f331c7e54 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 29 Jan 2021 15:47:24 +0800
+Subject: [PATCH 28/75] v4l2videodec: Add hantro 10bit support
+
+For 10bit stream on 8MM and 8MP, need to skip NV12X format when
+probe capture supported caps.
+(cherry picked from commit 11b6e0eb617be8cc3ed6027c18f5356fe589e40e,
+commit 63f281dfff8851b3e8847183052749c82e92dce3,
+commit b3146d4746f53f47371a3428993a2143d2b30ac5)
+
+Upstream-Status: Pending
+
+ Conflicts:
+	sys/v4l2/ext/videodev2.h
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/ext/videodev2.h |  1 +
+ sys/v4l2/gstv4l2object.c | 18 ++++++++++++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/sys/v4l2/ext/videodev2.h b/sys/v4l2/ext/videodev2.h
+index 9028b71..821c3b1 100644
+--- a/sys/v4l2/ext/videodev2.h
++++ b/sys/v4l2/ext/videodev2.h
+@@ -625,6 +625,7 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_NV16M   v4l2_fourcc('N', 'M', '1', '6') /* 16  Y/CbCr 4:2:2  */
+ #define V4L2_PIX_FMT_NV61M   v4l2_fourcc('N', 'M', '6', '1') /* 16  Y/CrCb 4:2:2  */
+ #define V4L2_PIX_FMT_P012M   v4l2_fourcc('P', 'M', '1', '2') /* 24  Y/CbCr 4:2:0 12-bit per component */
++#define V4L2_PIX_FMT_NV12X	 v4l2_fourcc('N', 'V', 'X', '2') /* Y/CbCr 4:2:0 for 10bit  */
+ #define V4L2_PIX_FMT_NV12_10BIT   v4l2_fourcc('N', 'T', '1', '2') /* Y/CbCr 4:2:0 for 10bit  */
+ 
+ /* three planes - Y Cb, Cr */
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 1efa18e..ef327ff 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -166,6 +166,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (NV12M_8L128, NV12_8L128),           GST_V4L2_RAW},
+   {MAP_FMT (NV12M_10BE_8L128, NV12_10BE_8L128), GST_V4L2_RAW},
+   {MAP_FMT (NV12_10BIT, NV12_10LE40),           GST_V4L2_RAW},
++  {MAP_FMT (NV12X, NV12_10LE40),                GST_V4L2_RAW},
+   {MAP_FMT (NV21M, NV21),                       GST_V4L2_RAW},
+   {MAP_FMT (NV21, NV21),                        GST_V4L2_RAW},
+   {MAP_FMT (NV16M, NV16),                       GST_V4L2_RAW},
+@@ -1161,6 +1162,7 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+     case V4L2_PIX_FMT_NV12:    /* Y/CbCr 4:2:0, 12 bits per pixel */
+     case V4L2_PIX_FMT_NV12M:   /* Same as NV12      */
+     case V4L2_PIX_FMT_NV12_10BIT:      /* 12  Y/CbCr 4:2:0  */
++    case V4L2_PIX_FMT_NV12X:
+       rank = YUV_BASE_RANK + 8;
+       break;
+     case V4L2_PIX_FMT_YUYV:    /* YUY2, 16 bits per pixel */
+@@ -1918,6 +1920,13 @@ gst_v4l2_object_get_caps_info (GstV4l2Object * v4l2object, GstCaps * caps,
+       fourcc_nc = desc->v4l2_format;
+     if (fallback_desc)
+       fourcc = fallback_desc->v4l2_format;
++    if (fourcc_nc == V4L2_PIX_FMT_NV12_10BIT) {
++       if (v4l2object->is_amphion)
++           fourcc = V4L2_PIX_FMT_NV12_10BIT;
++       else
++           fourcc = V4L2_PIX_FMT_NV12X;
++       fourcc_nc = 0;
++    }
+   } else if (g_str_equal (mimetype, "video/mpegts")) {
+     fourcc = V4L2_PIX_FMT_MPEG;
+   } else if (g_str_equal (mimetype, "video/x-dv")) {
+@@ -4542,6 +4551,9 @@ gst_v4l2_object_acquire_format (GstV4l2Object * v4l2object, GstVideoInfo * info)
+   if (v4l2object->ioctl (v4l2object->video_fd, VIDIOC_G_FMT, &fmt) < 0)
+     goto get_fmt_failed;
+ 
++  if (!IS_IMX8MQ () && fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_NV12X)
++    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_NV12;
++
+   fmtdesc = gst_v4l2_object_get_format_from_fourcc (v4l2object,
+       fmt.fmt.pix.pixelformat);
+   if (fmtdesc == NULL)
+@@ -5010,6 +5022,12 @@ gst_v4l2_object_probe_caps (GstV4l2Object * v4l2object, GstCaps * filter)
+     GstCaps *tmp;
+ 
+     format = (struct v4l2_fmtdesc *) walk->data;
++    if (!IS_IMX8MQ () && format->pixelformat == V4L2_PIX_FMT_NV12X) {
++      GST_DEBUG_OBJECT (v4l2object->dbg_obj,
++          "skip format %" GST_FOURCC_FORMAT,
++          GST_FOURCC_ARGS (format->pixelformat));
++      continue;
++    }
+ 
+     template = gst_v4l2_object_v4l2fourcc_to_bare_struct (format->pixelformat);
+ 
+-- 
+2.43.0
+

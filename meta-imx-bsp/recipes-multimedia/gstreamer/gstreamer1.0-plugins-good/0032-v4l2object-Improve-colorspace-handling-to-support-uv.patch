@@ -1,0 +1,60 @@
+From 839117447e4ae65212aadf35ecf6065ed666504f Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 26 Apr 2021 16:35:44 +0800
+Subject: [PATCH 32/75] v4l2object: Improve colorspace handling to support uvc
+ device
+
+v4l2 encoder won't probe all colorspace, range, matrix and transfer combination
+to save initialization time for low-speed devices. Unfortunately uvc driver
+default colorimetry is not in the colorimetry list of v4l2 encoder and it causes
+not-negotiated. If desired colorspace is 1:4:7:1, uvc driver will produce 1:4:5:1.
+
+To fix this, need to allow colorimetry 1:4:5:1 produced by uvc driver if desired
+colorspace is 1:4:7:1. This workaround should be removed later like discussion in
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/-/merge_requests/969.
+
+Upstream-Status: Pending
+
+(cherry picked from commit c2e178e8a1dedbac6c34b75077165c3443018f5b)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 4347311..07a05c2 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3624,6 +3624,14 @@ gst_v4l2_video_colorimetry_matches (const GstVideoColorimetry * cinfo,
+     GST_VIDEO_COLOR_RANGE_0_255, GST_VIDEO_COLOR_MATRIX_BT601,
+     GST_VIDEO_TRANSFER_SRGB, GST_VIDEO_COLOR_PRIMARIES_BT709
+   };
++  static const GstVideoColorimetry ci_likely_uvc = {
++    GST_VIDEO_COLOR_RANGE_0_255, GST_VIDEO_COLOR_MATRIX_BT601,
++    GST_VIDEO_TRANSFER_SRGB, GST_VIDEO_COLOR_PRIMARIES_BT709
++  };
++  static const GstVideoColorimetry ci_uvc = {
++    GST_VIDEO_COLOR_RANGE_0_255, GST_VIDEO_COLOR_MATRIX_BT601,
++    GST_VIDEO_TRANSFER_BT709, GST_VIDEO_COLOR_PRIMARIES_BT709
++  };
+ 
+   if (!gst_video_info_from_caps (&info, caps))
+     return FALSE;
+@@ -3641,9 +3649,11 @@ gst_v4l2_video_colorimetry_matches (const GstVideoColorimetry * cinfo,
+   if (gst_video_colorimetry_is_equal (&info.colorimetry, cinfo))
+     return TRUE;
+ 
+-  /* Allow 1:4:0:0 (produced by jpegdec) if the device expects 1:4:7:1 */
+-  if (gst_video_colorimetry_is_equal (&info.colorimetry, &ci_likely_jpeg)
+-      && gst_video_colorimetry_is_equal (cinfo, &ci_jpeg))
++  /* Allow 1:4:5:1 (produced by uvc driver) if desired colorspace is 1:4:7:1) */
++  if ((gst_video_colorimetry_is_equal (&info.colorimetry, &ci_likely_jpeg)
++          && gst_video_colorimetry_is_equal (cinfo, &ci_jpeg))
++      || (gst_video_colorimetry_is_equal (&info.colorimetry, &ci_likely_uvc)
++          && gst_video_colorimetry_is_equal (cinfo, &ci_uvc)))
+     return TRUE;
+ 
+   /* bypass check the below GST_VIDEO_TRANSFER_ARIB_STD_B67 type,
+-- 
+2.43.0
+

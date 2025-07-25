@@ -1,0 +1,75 @@
+From cc118f2d8e8ade0914c10f4ad91633ef7f9443a6 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 8 Dec 2023 09:37:14 +0800
+Subject: [PATCH 55/75] LF-10870 v4l2: support encoding after decoder
+ downscaling
+
+When encoder is connect to decoder which has downscale, encoder's
+padding_bottom will be overwriten by decoder's padding_bottom.
+
+"video/x-raw,width=1280,height=720 ! v4l2h264enc ! v4l2h264dec ! video/x-raw,width=320,height=240 ! v4l2h264enc"
+This command causes final encoder's padding_bottom to be 480
+instead of 0, which causes encoded file is 320x720 instead of
+correct 320x240. So encoder needs to set correct padding_bottom.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c   | 13 +++----------
+ sys/v4l2/gstv4l2videoenc.c | 11 ++++++++---
+ 2 files changed, 11 insertions(+), 13 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 8eb1ee7..8ff6c43 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -5228,16 +5228,9 @@ gst_v4l2_object_match_buffer_layout (GstV4l2Object * obj, guint n_planes,
+ 
+     format = obj->format;
+ 
+-    if (padded_height) {
+-      GST_DEBUG_OBJECT (obj->dbg_obj, "Padded height %u", padded_height);
+-
+-      obj->align.padding_bottom =
+-          padded_height - GST_VIDEO_INFO_FIELD_HEIGHT (&obj->info);
+-    } else {
+-      GST_WARNING_OBJECT (obj->dbg_obj,
+-          "Failed to compute padded height; keep the default one");
+-      padded_height = format.fmt.pix_mp.height;
+-    }
++    /* This is to avoid encode's padding_bottom is overwritten by decoder's
++     * padding_bottom in vmeta after downscaling */
++    padded_height = format.fmt.pix_mp.height;
+ 
+     /* update the current format with the stride we want to import from */
+     if (V4L2_TYPE_IS_MULTIPLANAR (obj->type)) {
+diff --git a/sys/v4l2/gstv4l2videoenc.c b/sys/v4l2/gstv4l2videoenc.c
+index 93e8811..d7fac9b 100644
+--- a/sys/v4l2/gstv4l2videoenc.c
++++ b/sys/v4l2/gstv4l2videoenc.c
+@@ -780,14 +780,19 @@ gst_v4l2_video_enc_handle_frame (GstVideoEncoder * encoder,
+   if (G_UNLIKELY (!g_atomic_int_get (&self->active)))
+     goto flushing;
+ 
+-  if (self->v4l2output->req_mode == GST_V4L2_IO_AUTO) {
++  if (self->v4l2output->req_mode == GST_V4L2_IO_AUTO ||
++      self->v4l2output->req_mode == GST_V4L2_IO_DMABUF_IMPORT) {
+     GstV4l2IOMode mode = self->v4l2output->mode;
+ 
+     if (gst_is_dmabuf_memory (gst_buffer_peek_memory (frame->input_buffer, 0))
+         && (frame->system_frame_number == 0)) {
+       self->v4l2output->mode = GST_V4L2_IO_DMABUF_IMPORT;
+-      if (!gst_v4l2_object_try_import (self->v4l2output, frame->input_buffer))
+-        self->v4l2output->mode = mode;
++      if (!gst_v4l2_object_try_import (self->v4l2output, frame->input_buffer)) {
++        if (mode == GST_V4L2_IO_DMABUF_IMPORT)
++          self->v4l2output->mode = GST_V4L2_IO_MMAP;
++        else
++          self->v4l2output->mode = mode;
++      }
+     }
+   }
+   /* It is possible that a system buffer is received when the number of
+-- 
+2.43.0
+

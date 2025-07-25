@@ -1,0 +1,53 @@
+From c71bd284ff19a770d12f8f6e399988e6d3cfa6e9 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Thu, 12 Sep 2019 16:15:20 -0700
+Subject: [PATCH 20/75] v4l2videodec: Support seek for resolution change
+ stream.
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+
+Conflicts:
+	sys/v4l2/gstv4l2videodec.c
+	sys/v4l2/gstv4l2object.c
+(cherry picked from commit 8a6ce1f1a2b24b3028550d6cf662a9cbec2a22d5,
+commit 2c6db2d07fd4fb8f4f3874f5a5a2b9c574b12463)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index e95c4d4..b4ff874 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -504,8 +504,13 @@ use_acquired_caps:
+   gst_video_codec_state_unref (output_state);
+ 
+   ret = GST_VIDEO_DECODER_CLASS (parent_class)->negotiate (decoder);
+-  if (!ret)
+-    goto not_negotiated;
++  if (!ret) {
++    if (GST_PAD_IS_FLUSHING (decoder->sinkpad)
++        || GST_PAD_IS_FLUSHING (decoder->srcpad))
++      goto flushing;
++    else
++      goto not_negotiated;
++  }
+ 
+   /* The pool may be created through gst_video_decoder_negotiate(), so must
+    * be kept after */
+@@ -521,6 +526,9 @@ use_acquired_caps:
+ 
+   return TRUE;
+ 
++flushing:
++  gst_v4l2_object_stop (self->v4l2capture);
++  return FALSE;
+ not_negotiated:
+   GST_ERROR_OBJECT (self, "not negotiated");
+   gst_v4l2_error (self, &error);
+-- 
+2.43.0
+

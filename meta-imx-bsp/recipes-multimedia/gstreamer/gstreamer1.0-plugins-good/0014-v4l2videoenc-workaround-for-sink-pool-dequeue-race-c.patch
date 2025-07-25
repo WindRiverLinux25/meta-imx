@@ -1,0 +1,38 @@
+From 917eba9da22fd6a8f828e4aa975443edeff590b9 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Thu, 9 Aug 2018 10:21:55 -0700
+Subject: [PATCH 14/75] v4l2videoenc: workaround for sink pool dequeue race
+ condition
+
+Sink pool dequeue and finish frame has race condition.
+Unref input buffer in chain thread to avoid it.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=752962
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+(cherry picked from commit 154f5a12656ae888b00810a49fdf5f1f7586ef88)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videoenc.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2videoenc.c b/sys/v4l2/gstv4l2videoenc.c
+index b4317cf..9df7804 100644
+--- a/sys/v4l2/gstv4l2videoenc.c
++++ b/sys/v4l2/gstv4l2videoenc.c
+@@ -890,7 +890,10 @@ gst_v4l2_video_enc_handle_frame (GstVideoEncoder * encoder,
+     }
+   }
+ 
++  gst_buffer_unref (frame->input_buffer);
++  frame->input_buffer = NULL;
+   gst_video_codec_frame_unref (frame);
++
+   return ret;
+ 
+   /* ERRORS */
+-- 
+2.43.0
+

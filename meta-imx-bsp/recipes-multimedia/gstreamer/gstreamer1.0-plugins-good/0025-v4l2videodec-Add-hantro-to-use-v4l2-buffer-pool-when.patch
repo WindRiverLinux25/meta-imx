@@ -1,0 +1,71 @@
+From 10e4cc421b1aa74fcc68c4d1291bcf317be43f67 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 24 Nov 2020 16:57:03 +0800
+Subject: [PATCH 25/75] v4l2videodec: Add hantro to use v4l2 buffer pool when
+ link videodecoder to fakesink.
+
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/-/issues/805
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+(cherry picked from commit 07be67802a1cf7c2ac965010b9308c2486ff17d2)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 3 ++-
+ sys/v4l2/gstv4l2object.h | 1 +
+ sys/v4l2/v4l2_calls.c    | 5 +++++
+ 3 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 3a1a305..1af0932 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -5385,7 +5385,8 @@ gst_v4l2_object_decide_allocation (GstV4l2Object * obj, GstQuery * query)
+   can_share_own_pool = (has_video_meta || !obj->need_video_meta);
+ 
+   /* aovid copy Amphion tiled frame buffer for un-active video track */
+-  if (obj->is_amphion) {
++  /* also to avoid copy Hantro frame buffer when link v4l2 decoder with fakesink */
++  if (obj->is_amphion || obj->is_hantro) {
+     can_share_own_pool = TRUE;
+     if (min < GST_V4L2_MIN_BUFFERS (obj))
+       min = GST_V4L2_MIN_BUFFERS (obj);
+diff --git a/sys/v4l2/gstv4l2object.h b/sys/v4l2/gstv4l2object.h
+index 9b8f043..a3173ba 100644
+--- a/sys/v4l2/gstv4l2object.h
++++ b/sys/v4l2/gstv4l2object.h
+@@ -231,6 +231,7 @@ struct _GstV4l2Object {
+    * the caps to reflect what was negotiated during fixation */
+   gboolean skip_try_fmt_probes;
+   gboolean is_amphion;
++  gboolean is_hantro;
+   
+   guint max_width;
+   guint max_height;
+diff --git a/sys/v4l2/v4l2_calls.c b/sys/v4l2/v4l2_calls.c
+index 00d57ec..e273f32 100644
+--- a/sys/v4l2/v4l2_calls.c
++++ b/sys/v4l2/v4l2_calls.c
+@@ -610,6 +610,10 @@ gst_v4l2_open (GstV4l2Object * v4l2object, GstV4l2Error * error)
+     v4l2object->is_amphion = TRUE;
+   }
+ 
++  if (!strcmp ((char *) v4l2object->vcap.driver, "vsi_v4l2")) {
++    v4l2object->is_hantro = TRUE;
++  }
++
+   return TRUE;
+ 
+   /* ERRORS */
+@@ -699,6 +703,7 @@ gst_v4l2_dup (GstV4l2Object * v4l2object, GstV4l2Object * other)
+   v4l2object->dont_use_dmabuf = other->dont_use_dmabuf;
+   v4l2object->no_initial_format = other->no_initial_format;
+   v4l2object->is_amphion = other->is_amphion;
++  v4l2object->is_hantro = other->is_hantro;
+ 
+   return TRUE;
+ 
+-- 
+2.43.0
+

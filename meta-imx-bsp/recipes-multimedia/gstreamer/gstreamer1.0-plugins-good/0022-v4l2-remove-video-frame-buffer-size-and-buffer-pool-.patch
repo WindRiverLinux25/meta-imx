@@ -1,0 +1,69 @@
+From 2874bf5a5e184810ee843ec79e32ff57a9781b82 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Thu, 3 Sep 2020 18:30:53 +0800
+Subject: [PATCH 22/75] v4l2: remove video frame buffer size and buffer pool
+ size limitation.
+
+Hantro video frame buffer size is larger than video frame content size.
+
+Upstream-Status: Pending
+
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit 12f5aea215f53e0dcfe0220b2628ecf1b9681e4d)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2bufferpool.c | 12 ------------
+ sys/v4l2/gstv4l2object.c     |  7 -------
+ 2 files changed, 19 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index f422ce7..7bfb2b5 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -1933,10 +1933,6 @@ gst_v4l2_buffer_pool_process (GstV4l2BufferPool * pool, GstBuffer ** buf,
+               goto eos;
+             }
+ 
+-            if (GST_VIDEO_INFO_FORMAT (&pool->caps_info) !=
+-                GST_VIDEO_FORMAT_ENCODED && size < pool->size)
+-              goto buffer_truncated;
+-
+             num_queued = g_atomic_int_get (&pool->num_queued);
+             GST_TRACE_OBJECT (pool, "Only %i buffer left in the capture queue.",
+                 num_queued);
+@@ -2202,14 +2198,6 @@ copy_failed:
+     GST_ERROR_OBJECT (pool, "failed to copy buffer");
+     return ret;
+   }
+-buffer_truncated:
+-  {
+-    GST_WARNING_OBJECT (pool,
+-        "Dropping truncated buffer, this is likely a driver bug.");
+-    gst_buffer_unref (*buf);
+-    *buf = NULL;
+-    return GST_V4L2_FLOW_CORRUPTED_BUFFER;
+-  }
+ eos:
+   {
+     GST_DEBUG_OBJECT (pool, "end of sequence reached");
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 2f38c73..3a1a305 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3435,13 +3435,6 @@ gst_v4l2_object_extrapolate_info (GstV4l2Object * v4l2object,
+         "stride %d, offset %" G_GSIZE_FORMAT, i, stride, info->stride[i],
+         info->offset[i]);
+   }
+-
+-  /* Update the image size according the amount of data we are going to
+-   * read/write. This workaround bugs in driver where the sizeimage provided
+-   * by TRY/S_FMT represent the buffer length (maximum size) rather then the expected
+-   * bytesused (buffer size). */
+-  if (offs < info->size)
+-    info->size = offs;
+ }
+ 
+ static void
+-- 
+2.43.0
+

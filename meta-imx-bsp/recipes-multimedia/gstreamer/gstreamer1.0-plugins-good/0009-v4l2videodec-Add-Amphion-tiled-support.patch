@@ -1,0 +1,122 @@
+From e6a84bbb7ed1f6eccb6e97b3ba95f1d513f4d42e Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Mon, 26 Mar 2018 15:20:54 -0700
+Subject: [PATCH 09/75] v4l2videodec: Add Amphion tiled support.
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+(cherry picked from commit c0036bcf85b1293cabb0994f872cd0e28191733b)
+
+Conflicts:
+	sys/v4l2/gstv4l2object.h
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.h   |  1 +
+ sys/v4l2/gstv4l2videodec.c |  8 ++++++++
+ sys/v4l2/v4l2_calls.c      | 13 +++++++++----
+ 3 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.h b/sys/v4l2/gstv4l2object.h
+index 2e8d926..93971a7 100644
+--- a/sys/v4l2/gstv4l2object.h
++++ b/sys/v4l2/gstv4l2object.h
+@@ -229,6 +229,7 @@ struct _GstV4l2Object {
+    * on slow USB firmwares. When this is set, gst_v4l2_set_format() will modify
+    * the caps to reflect what was negotiated during fixation */
+   gboolean skip_try_fmt_probes;
++  gboolean is_amphion;
+   
+   guint max_width;
+   guint max_height;
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 0b81ac6..6f256c7 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -28,9 +28,12 @@
+ #include <errno.h>
+ #include <unistd.h>
+ #include <string.h>
++#include <libdrm/drm_fourcc.h>
++#include <gst/allocators/gstdmabufmeta.h>
+ 
+ #include "gstv4l2object.h"
+ #include "gstv4l2videodec.h"
++#include "gstimxcommon.h"
+ 
+ #include "gstv4l2h264codec.h"
+ #include "gstv4l2h265codec.h"
+@@ -860,6 +863,11 @@ gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
+ 
+     frame->duration = self->v4l2capture->duration;
+     frame->output_buffer = buffer;
++    if (IS_AMPHION () && self->v4l2capture->is_amphion) {
++      guint64 drm_modifier = DRM_FORMAT_MOD_AMPHION_TILED;
++      gst_buffer_add_dmabuf_meta (frame->output_buffer, drm_modifier);
++      GST_DEBUG_OBJECT (decoder, "Add drm modifier: %lld\n", drm_modifier);
++    }
+     buffer = NULL;
+     ret = gst_video_decoder_finish_frame (decoder, frame);
+ 
+diff --git a/sys/v4l2/v4l2_calls.c b/sys/v4l2/v4l2_calls.c
+index b2165bc..672e723 100644
+--- a/sys/v4l2/v4l2_calls.c
++++ b/sys/v4l2/v4l2_calls.c
+@@ -605,6 +605,10 @@ gst_v4l2_open (GstV4l2Object * v4l2object, GstV4l2Error * error)
+     v4l2object->never_interlaced = TRUE;
+   }
+ 
++  if (!strcmp ((char *) v4l2object->vcap.driver, "vpu B0")) {
++    v4l2object->is_amphion = TRUE;
++  }
++
+   return TRUE;
+ 
+   /* ERRORS */
+@@ -692,6 +696,7 @@ gst_v4l2_dup (GstV4l2Object * v4l2object, GstV4l2Object * other)
+ 
+   v4l2object->never_interlaced = other->never_interlaced;
+   v4l2object->no_initial_format = other->no_initial_format;
++  v4l2object->is_amphion = other->is_amphion;
+ 
+   return TRUE;
+ 
+@@ -1148,7 +1153,7 @@ input_failed:
+ }
+ 
+ gboolean
+-gst_v4l2_query_input (GstV4l2Object * obj, struct v4l2_input *input)
++gst_v4l2_query_input (GstV4l2Object * obj, struct v4l2_input * input)
+ {
+   gint ret;
+ 
+@@ -1279,7 +1284,7 @@ failed:
+ }
+ 
+ gboolean
+-gst_v4l2_dequeue_event (GstV4l2Object * v4l2object, struct v4l2_event *event)
++gst_v4l2_dequeue_event (GstV4l2Object * v4l2object, struct v4l2_event * event)
+ {
+   gint ret;
+ 
+@@ -1302,7 +1307,7 @@ gst_v4l2_dequeue_event (GstV4l2Object * v4l2object, struct v4l2_event *event)
+ 
+ gboolean
+ gst_v4l2_set_dv_timings (GstV4l2Object * v4l2object,
+-    struct v4l2_dv_timings *timings)
++    struct v4l2_dv_timings * timings)
+ {
+   gint ret;
+ 
+@@ -1322,7 +1327,7 @@ gst_v4l2_set_dv_timings (GstV4l2Object * v4l2object,
+ 
+ gboolean
+ gst_v4l2_query_dv_timings (GstV4l2Object * v4l2object,
+-    struct v4l2_dv_timings *timings)
++    struct v4l2_dv_timings * timings)
+ {
+   gint ret;
+ 
+-- 
+2.43.0
+

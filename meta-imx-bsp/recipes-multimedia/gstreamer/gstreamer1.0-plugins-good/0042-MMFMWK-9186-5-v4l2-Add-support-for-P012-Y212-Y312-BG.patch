@@ -1,0 +1,77 @@
+From da624665a7be326bbe86446f08d9c38f71dd9b34 Mon Sep 17 00:00:00 2001
+From: Ming Qian <ming.qian@nxp.com>
+Date: Wed, 8 Jun 2022 10:09:19 +0800
+Subject: [PATCH 42/75] MMFMWK-9186-5 v4l2: Add support for
+ P012,Y212,Y312,BGR_12LE,BGRA_12LE,Y012_LE
+
+These foramtd are used by imx-jpeg
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/ext/videodev2.h | 3 +++
+ sys/v4l2/gstv4l2object.c | 7 +++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/sys/v4l2/ext/videodev2.h b/sys/v4l2/ext/videodev2.h
+index 9b04161..73499cb 100644
+--- a/sys/v4l2/ext/videodev2.h
++++ b/sys/v4l2/ext/videodev2.h
+@@ -558,6 +558,8 @@ struct v4l2_pix_format {
+ /* RGB formats (6 or 8 bytes per pixel) */
+ #define V4L2_PIX_FMT_BGR48_12    v4l2_fourcc('B', '3', '1', '2') /* 48  BGR 12-bit per component */
+ #define V4L2_PIX_FMT_ABGR64_12   v4l2_fourcc('B', '4', '1', '2') /* 64  BGRA 12-bit per component */
++#define V4L2_PIX_FMT_B312    v4l2_fourcc('B', '3', '1', '2') /* 48  BGR 12-bit per component */
++#define V4L2_PIX_FMT_B412    v4l2_fourcc('B', '4', '1', '2') /* 64  BGRA 12-bit per component */
+ 
+ /* Grey formats */
+ #define V4L2_PIX_FMT_GREY    v4l2_fourcc('G', 'R', 'E', 'Y') /*  8  Greyscale     */
+@@ -609,6 +611,7 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_Y210    v4l2_fourcc('Y', '2', '1', '0') /* 32  YUYV 4:2:2 */
+ #define V4L2_PIX_FMT_Y212    v4l2_fourcc('Y', '2', '1', '2') /* 32  YUYV 4:2:2 */
+ #define V4L2_PIX_FMT_Y216    v4l2_fourcc('Y', '2', '1', '6') /* 32  YUYV 4:2:2 */
++#define V4L2_PIX_FMT_Y312    v4l2_fourcc('Y', '3', '1', '2') /* 48  YUV 4:4:4 12-bit per component */
+ 
+ /* two planes -- one Y, one Cr + Cb interleaved  */
+ #define V4L2_PIX_FMT_NV12    v4l2_fourcc('N', 'V', '1', '2') /* 12  Y/CbCr 4:2:0  */
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 4f98046..d466513 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -110,6 +110,8 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (RGBX32, RGBx),      GST_V4L2_RAW},
+   {MAP_FMT (ARGB32, ARGB),      GST_V4L2_RAW},
+   {MAP_FMT (XRGB32, xRGB),      GST_V4L2_RAW},
++  {MAP_FMT (BGR48_12, BGR_12LE), GST_V4L2_RAW},
++  {MAP_FMT (ABGR64_12, BGRA_12LE), GST_V4L2_RAW},
+ 
+   /* Deprecated Packed RGB Image Formats (alpha ambiguity) */
+   {MAP_FMT (RGB444, UNKNOWN), GST_V4L2_RAW},
+@@ -126,6 +128,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (Y6, UNKNOWN),       GST_V4L2_RAW},
+   {MAP_FMT (Y10, UNKNOWN),      GST_V4L2_RAW},
+   {MAP_FMT (Y12, UNKNOWN),      GST_V4L2_RAW},
++  {MAP_FMT (Y012, Y012_LE),     GST_V4L2_RAW},
+   {MAP_FMT (Y16, GRAY16_LE),    GST_V4L2_RAW},
+   {MAP_FMT (Y16_BE, GRAY16_BE), GST_V4L2_RAW},
+   {MAP_FMT (Y10BPACK, UNKNOWN), GST_V4L2_RAW},
+@@ -159,6 +162,8 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (YUV420, I420),    GST_V4L2_RAW},
+   {MAP_FMT (HI240, UNKNOWN),  GST_V4L2_RAW},
+   {MAP_FMT (M420, UNKNOWN),   GST_V4L2_RAW},
++  {MAP_FMT (Y212, Y212_LE),   GST_V4L2_RAW},
++  {MAP_FMT (YUV48_12, Y312_LE), GST_V4L2_RAW},
+ 
+   /* two planes -- one Y,         one Cr + Cb interleaved  */
+   {MAP_FMT (NV12M, NV12),                       GST_V4L2_RAW},
+@@ -182,6 +187,8 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (NV42, UNKNOWN),                     GST_V4L2_RAW},
+   {MAP_FMT (MM21, NV12_16L32S),                 GST_V4L2_RAW},
+   {MAP_FMT (P010, P010_10LE),                   GST_V4L2_RAW},
++  {MAP_FMT (P012M, P012_LE),                    GST_V4L2_RAW},
++  {MAP_FMT (P012,  P012_LE),                    GST_V4L2_RAW},
+ 
+   /* Bayer formats - see http://www.siliconimaging.com/RGB%20Bayer.htm */
+   {MAP_FMT (SBGGR8, ENCODED),   GST_V4L2_BAYER},
+-- 
+2.43.0
+

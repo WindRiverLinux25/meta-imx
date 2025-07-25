@@ -1,0 +1,51 @@
+From 86f225d0318e68a652dd5161f8c96f51c3a3bb7f Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 19 Sep 2019 23:16:32 +0800
+Subject: [PATCH 21/75] MMFMWK-8625 amrparse: fix AMR audio exit directly with
+ eos after fast seek
+
+Need to skip one byte when not find valid frame in gst_amr_parse_handle_frame().
+Otherwise, scan frame size will be bigger after each scan and finally return
+GST_FLOW_EOS, which cause audio exit directly after fast seek.
+
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/merge_requests/333
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+(cherry picked from commit f640a95fd756129c0aef34fda3649ca9f832eb5e)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/audioparsers/gstamrparse.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/gst/audioparsers/gstamrparse.c b/gst/audioparsers/gstamrparse.c
+index 0ef612e..4052378 100644
+--- a/gst/audioparsers/gstamrparse.c
++++ b/gst/audioparsers/gstamrparse.c
+@@ -302,17 +302,20 @@ gst_amr_parse_handle_frame (GstBaseParse * parse,
+      *       perform this check)
+      */
+     if (fsize) {
+-      *skipsize = 0;
+       /* in sync, no further check */
+       if (!GST_BASE_PARSE_LOST_SYNC (parse)) {
+         found = TRUE;
++        *skipsize = 0;
+       } else if (dsize > fsize) {
+         /* enough data, check for next sync */
+-        if ((map.data[fsize] & 0x83) == 0)
++        if ((map.data[fsize] & 0x83) == 0) {
+           found = TRUE;
++          *skipsize = 0;
++        }
+       } else if (GST_BASE_PARSE_DRAINING (parse)) {
+         /* not enough, but draining, so ok */
+         found = TRUE;
++        *skipsize = 0;
+       }
+     }
+   }
+-- 
+2.43.0
+

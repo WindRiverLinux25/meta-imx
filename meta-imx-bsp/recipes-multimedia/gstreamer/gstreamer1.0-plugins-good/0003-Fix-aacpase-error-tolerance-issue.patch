@@ -1,0 +1,36 @@
+From 4f6e7eddf10eac1c55a6796be7a96144d3659f93 Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@freescale.com>
+Date: Fri, 6 Feb 2015 11:27:47 +0800
+Subject: [PATCH 03/75] Fix aacpase error tolerance issue
+
+There is no need to check channel configure in adts header.
+The channel could be output of decoder.
+No need to return fatal error here.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=743332
+
+Upstream-Status: Pending
+
+Signed-off-by: Lyon Wang <lyon.wang@freescale.com>
+(cherry picked from commit 6bb15b284ced8baddcaffd5cdb399813045bb8ed)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/audioparsers/gstaacparse.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst/audioparsers/gstaacparse.c b/gst/audioparsers/gstaacparse.c
+index eb3ee98..07ef3e9 100644
+--- a/gst/audioparsers/gstaacparse.c
++++ b/gst/audioparsers/gstaacparse.c
+@@ -1012,7 +1012,7 @@ gst_aac_parse_detect_stream (GstAacParse * aacparse,
+     gst_aac_parse_parse_adts_header (aacparse, data, &rate, &channels,
+         &aacparse->object_type, &aacparse->mpegversion);
+ 
+-    if (!channels || !framesize) {
++    if (!framesize) {
+       GST_DEBUG_OBJECT (aacparse, "impossible ADTS configuration");
+       return FALSE;
+     }
+-- 
+2.43.0
+

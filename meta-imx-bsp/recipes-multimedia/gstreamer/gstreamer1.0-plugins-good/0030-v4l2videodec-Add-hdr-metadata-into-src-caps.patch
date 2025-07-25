@@ -1,0 +1,220 @@
+From e0c86e3f9406bc20b456d1d996ed52a1a602106c Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 22 Feb 2021 10:51:01 +0800
+Subject: [PATCH 30/75] v4l2videodec: Add hdr metadata into src caps
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+
+ Conflicts:
+	sys/v4l2/gstv4l2videodec.c
+(cherry picked from commit adf9da22db8233ab543521b48fa73902f2a5df23,
+commit d41df7c548d66ed580f9b0b589fc04e6572b7f71)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/ext/v4l2-controls.h |  3 ++
+ sys/v4l2/ext/videodev2.h     | 13 +++++
+ sys/v4l2/gstv4l2videodec.c   | 96 ++++++++++++++++++++++++++++++++++--
+ sys/v4l2/gstv4l2videodec.h   |  1 +
+ 4 files changed, 110 insertions(+), 3 deletions(-)
+
+diff --git a/sys/v4l2/ext/v4l2-controls.h b/sys/v4l2/ext/v4l2-controls.h
+index 151dc2c..968bc4d 100644
+--- a/sys/v4l2/ext/v4l2-controls.h
++++ b/sys/v4l2/ext/v4l2-controls.h
+@@ -207,6 +207,9 @@ enum v4l2_colorfx {
+ #define V4L2_CID_CODEC_BASE			(V4L2_CTRL_CLASS_CODEC | 0x900)
+ #define V4L2_CID_CODEC_CLASS			(V4L2_CTRL_CLASS_CODEC | 1)
+ 
++/* ctrls & extension ctrls definitions */
++#define V4L2_CID_HDR10META			(V4L2_CID_USER_IMX_BASE + 6)
++
+ /*  MPEG streams, specific to multiplexed streams */
+ #define V4L2_CID_MPEG_STREAM_TYPE		(V4L2_CID_CODEC_BASE+0)
+ enum v4l2_mpeg_stream_type {
+diff --git a/sys/v4l2/ext/videodev2.h b/sys/v4l2/ext/videodev2.h
+index ba9bfe6..9b04161 100644
+--- a/sys/v4l2/ext/videodev2.h
++++ b/sys/v4l2/ext/videodev2.h
+@@ -282,6 +282,7 @@ enum v4l2_xfer_func {
+ 	V4L2_XFER_FUNC_NONE        = 5,
+ 	V4L2_XFER_FUNC_DCI_P3      = 6,
+ 	V4L2_XFER_FUNC_SMPTE2084   = 7,
++	V4L2_XFER_FUNC_HLG         = 8,
+ };
+ 
+ /*
+@@ -1809,6 +1810,18 @@ struct v4l2_ext_controls {
+ 	struct v4l2_ext_control *controls;
+ };
+ 
++struct v4l2_hdr10_meta {
++	__u32 hasHdr10Meta;
++	__u32 redPrimary[2];
++	__u32 greenPrimary[2];
++	__u32 bluePrimary[2];
++	__u32 whitePoint[2];
++	__u32 maxMasteringLuminance;
++	__u32 minMasteringLuminance;
++	__u32 maxContentLightLevel;
++	__u32 maxFrameAverageLightLevel;
++};
++
+ #define V4L2_CTRL_ID_MASK	  (0x0fffffff)
+ #define V4L2_CTRL_ID2CLASS(id)    ((id) & 0x0fff0000UL)
+ #define V4L2_CTRL_ID2WHICH(id)    ((id) & 0x0fff0000UL)
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 1fb7316..0e1a1ef 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -225,6 +225,10 @@ gst_v4l2_video_dec_stop (GstVideoDecoder * decoder)
+     self->input_state = NULL;
+   }
+ 
++  if (self->output_state) {
++    gst_video_codec_state_unref (self->output_state);
++    self->output_state = NULL;
++  }
+   GST_DEBUG_OBJECT (self, "Stopped");
+ 
+   return TRUE;
+@@ -403,6 +407,55 @@ gst_v4l2_video_remove_padding (GstCapsFeatures * features,
+   return TRUE;
+ }
+ 
++static gboolean
++get_hdr10_meta (GstV4l2Object * v4l2object, struct v4l2_hdr10_meta *Hdr10Meta)
++{
++  struct v4l2_ext_control ctrl;
++  struct v4l2_ext_controls ctrls;
++  struct v4l2_hdr10_meta hdr10_meta;
++
++  memset (&ctrls, 0, sizeof (ctrls));
++  memset (&ctrl, 0, sizeof (ctrl));
++  memset (&hdr10_meta, 0, sizeof (hdr10_meta));
++
++  ctrls.controls = &ctrl;
++  ctrls.count = 1;
++
++  ctrl.id = V4L2_CID_HDR10META;
++  ctrl.ptr = (void *) &hdr10_meta;
++  ctrl.size = sizeof (hdr10_meta);
++
++  if (ioctl (v4l2object->video_fd, VIDIOC_G_EXT_CTRLS, &ctrls) < 0) {
++    GST_WARNING_OBJECT (v4l2object->dbg_obj, "Failed to get hdr10 meta\n");
++    return FALSE;
++  }
++
++  *Hdr10Meta = hdr10_meta;
++  if (!hdr10_meta.hasHdr10Meta) {
++    GST_INFO_OBJECT (v4l2object->dbg_obj, "Has no HDR meta");
++    return FALSE;
++  }
++
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "redPrimary(%d, %d)",
++      hdr10_meta.redPrimary[0], hdr10_meta.redPrimary[1]);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "greenPrimary(%d, %d)",
++      hdr10_meta.greenPrimary[0], hdr10_meta.greenPrimary[1]);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "bluePrimary(%d, %d)",
++      hdr10_meta.bluePrimary[0], hdr10_meta.bluePrimary[1]);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "whitePoint(%d, %d)",
++      hdr10_meta.whitePoint[0], hdr10_meta.whitePoint[1]);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "maxMasteringLuminance %d",
++      hdr10_meta.maxMasteringLuminance);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "minMasteringLuminance %d",
++      hdr10_meta.minMasteringLuminance);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "maxContentLightLevel %d",
++      hdr10_meta.maxContentLightLevel);
++  GST_INFO_OBJECT (v4l2object->dbg_obj, "maxFrameAverageLightLevel %d",
++      hdr10_meta.maxFrameAverageLightLevel);
++
++  return TRUE;
++}
++
+ static gboolean
+ gst_v4l2_video_dec_negotiate (GstVideoDecoder * decoder)
+ {
+@@ -415,6 +468,7 @@ gst_v4l2_video_dec_negotiate (GstVideoDecoder * decoder)
+   gboolean active;
+   GstBufferPool *cpool;
+   gboolean ret;
++  struct v4l2_hdr10_meta Hdr10Meta = { 0 };
+ 
+   /* We don't allow renegotiation without careful disabling the pool */
+   cpool = gst_v4l2_object_get_buffer_pool (self->v4l2capture);
+@@ -501,13 +555,15 @@ use_acquired_caps:
+   if (!self->v4l2capture->fmtdesc)
+     goto not_negotiated;
+ 
+-  output_state = gst_video_decoder_set_output_state (decoder,
+-      info.finfo->format, info.width, info.height, self->input_state);
++  if (self->output_state)
++    gst_video_codec_state_unref (self->output_state);
++  self->output_state = output_state =
++      gst_video_decoder_set_output_state (decoder, info.finfo->format,
++      info.width, info.height, self->input_state);
+ 
+   /* Copy the rest of the information, there might be more in the future */
+   output_state->info.interlace_mode = info.interlace_mode;
+   output_state->info.colorimetry = info.colorimetry;
+-  gst_video_codec_state_unref (output_state);
+ 
+   ret = GST_VIDEO_DECODER_CLASS (parent_class)->negotiate (decoder);
+   if (!ret) {
+@@ -523,6 +579,40 @@ use_acquired_caps:
+   cpool = gst_v4l2_object_get_buffer_pool (self->v4l2capture);
+   gst_v4l2_buffer_pool_enable_resolution_change (GST_V4L2_BUFFER_POOL (cpool));
+ 
++  get_hdr10_meta (self->v4l2capture, &Hdr10Meta);
++  if ((self->v4l2capture->format.fmt.pix.xfer_func == V4L2_XFER_FUNC_SMPTE2084
++          || self->v4l2capture->format.fmt.pix.xfer_func == V4L2_XFER_FUNC_HLG)
++      && info.finfo->format == GST_VIDEO_FORMAT_NV12_10LE40) {
++    GstVideoMasteringDisplayInfo minfo;
++    GstVideoContentLightLevel cll;
++    minfo.display_primaries[0].x = Hdr10Meta.redPrimary[0];
++    minfo.display_primaries[0].y = Hdr10Meta.redPrimary[1];
++    minfo.display_primaries[1].x = Hdr10Meta.greenPrimary[0];
++    minfo.display_primaries[1].y = Hdr10Meta.greenPrimary[1];
++    minfo.display_primaries[2].x = Hdr10Meta.bluePrimary[0];
++    minfo.display_primaries[2].y = Hdr10Meta.bluePrimary[1];
++    minfo.white_point.x = Hdr10Meta.whitePoint[0];
++    minfo.white_point.y = Hdr10Meta.whitePoint[1];
++    minfo.max_display_mastering_luminance = Hdr10Meta.maxMasteringLuminance;
++    minfo.min_display_mastering_luminance = Hdr10Meta.minMasteringLuminance;
++    cll.max_content_light_level = Hdr10Meta.maxContentLightLevel;
++    cll.max_frame_average_light_level = Hdr10Meta.maxFrameAverageLightLevel;
++    if (output_state->caps) {
++      output_state->caps = gst_caps_make_writable (output_state->caps);
++      gst_video_mastering_display_info_add_to_caps (&minfo, output_state->caps);
++      gst_video_content_light_level_add_to_caps (&cll, output_state->caps);
++    }
++
++    /* allow renegotiation for hdr10 video */
++    if (!GST_VIDEO_DECODER_CLASS (parent_class)->negotiate (decoder)) {
++      if (GST_PAD_IS_FLUSHING (decoder->sinkpad)
++          || GST_PAD_IS_FLUSHING (decoder->srcpad))
++        goto flushing;
++      else
++        goto not_negotiated;
++    }
++  }
++
+   /* Ensure our internal pool is activated */
+   active = gst_buffer_pool_set_active (cpool, TRUE);
+   if (cpool)
+diff --git a/sys/v4l2/gstv4l2videodec.h b/sys/v4l2/gstv4l2videodec.h
+index fbbfb60..0ab90fa 100644
+--- a/sys/v4l2/gstv4l2videodec.h
++++ b/sys/v4l2/gstv4l2videodec.h
+@@ -60,6 +60,7 @@ struct _GstV4l2VideoDec
+ 
+   /* State */
+   GstVideoCodecState *input_state;
++  GstVideoCodecState *output_state;
+   gboolean active;
+   GstFlowReturn output_flow;
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,31 @@
+From 9c0476dfe2e9f7d09bedaf7cdc492d2023bc5025 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 23 May 2024 08:43:01 +0800
+Subject: [PATCH 64/75] LF-12431 v4l2: Enlarge maximum encoded buffer size to
+ 6MB
+
+For below stream, original 4MB encoded buffer size is not enough.
+/mnt/src/mm_public/WebM/Conformance/4K/Hubble_Realms_of_Light_in_4k_UHD__VO_2160p.webm
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 469f965..cc7e86c 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -57,7 +57,7 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
+ #define DEFAULT_PROP_IO_MODE            GST_V4L2_IO_AUTO
+ 
+ #define ENCODED_BUFFER_MIN_SIZE         (256 * 1024)
+-#define ENCODED_BUFFER_MAX_SIZE         (4 * 1024 * 1024)
++#define ENCODED_BUFFER_MAX_SIZE         (6 * 1024 * 1024)
+ #define GST_V4L2_DEFAULT_WIDTH          320
+ #define GST_V4L2_DEFAULT_HEIGHT         240
+ 
+-- 
+2.43.0
+

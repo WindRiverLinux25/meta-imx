@@ -1,0 +1,48 @@
+From b08e414cbe9eefa0399c14d88bd1e1615a38dbcf Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Wed, 27 Sep 2023 14:33:56 +0900
+Subject: [PATCH 53/75] v4l2videodec: support negotiation for downscale when
+ sink getcaps
+
+Upstream-Status: Pending
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/5397>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 3cfe668..f499b71 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -1338,8 +1338,15 @@ gst_v4l2_video_dec_sink_getcaps (GstVideoDecoder * decoder, GstCaps * filter)
+   GstV4l2VideoDec *self = GST_V4L2_VIDEO_DEC (decoder);
+   GstCaps *result;
+ 
+-  result = gst_video_decoder_proxy_getcaps (decoder, self->probed_sinkcaps,
+-      filter);
++  if (self->probed_sinkcaps) {
++    if (filter)
++      result = gst_caps_intersect_full (filter, self->probed_sinkcaps,
++          GST_CAPS_INTERSECT_FIRST);
++    else
++      result = gst_caps_ref (self->probed_sinkcaps);
++  } else {
++    result = gst_video_decoder_proxy_getcaps (decoder, NULL, filter);
++  }
+ 
+   GST_DEBUG_OBJECT (self, "Returning sink caps %" GST_PTR_FORMAT, result);
+ 
+@@ -1349,9 +1356,7 @@ gst_v4l2_video_dec_sink_getcaps (GstVideoDecoder * decoder, GstCaps * filter)
+ static gboolean
+ gst_v4l2_video_dec_sink_event (GstVideoDecoder * decoder, GstEvent * event)
+ {
+-  GstV4l2VideoDec *self = GST_V4L2_VIDEO_DEC (decoder);
+   gboolean ret;
+-  GstEventType type = GST_EVENT_TYPE (event);
+ 
+   ret = GST_VIDEO_DECODER_CLASS (parent_class)->sink_event (decoder, event);
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,51 @@
+From bdb3b07bd9596c3d6c06300fce92222df40c3162 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 15 Nov 2022 09:01:25 +0800
+Subject: [PATCH 40/75] v4l2videoenc: Set encoder output mode to DMABUF_IMPORT
+ if receive dmabuf
+
+When output-io-mode is none auto, set output mode to DMABUF_IMPORT to avoid
+memory copy if encoder receives dmabuf. Check buffer type for each input
+buffer and drop non-dmabuf in DMABUF_IMPORT mode.
+
+Upstream-Status: Pending
+
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/-/merge_requests/1095>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videoenc.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2videoenc.c b/sys/v4l2/gstv4l2videoenc.c
+index 8663437..93e8811 100644
+--- a/sys/v4l2/gstv4l2videoenc.c
++++ b/sys/v4l2/gstv4l2videoenc.c
+@@ -780,6 +780,25 @@ gst_v4l2_video_enc_handle_frame (GstVideoEncoder * encoder,
+   if (G_UNLIKELY (!g_atomic_int_get (&self->active)))
+     goto flushing;
+ 
++  if (self->v4l2output->req_mode == GST_V4L2_IO_AUTO) {
++    GstV4l2IOMode mode = self->v4l2output->mode;
++
++    if (gst_is_dmabuf_memory (gst_buffer_peek_memory (frame->input_buffer, 0))
++        && (frame->system_frame_number == 0)) {
++      self->v4l2output->mode = GST_V4L2_IO_DMABUF_IMPORT;
++      if (!gst_v4l2_object_try_import (self->v4l2output, frame->input_buffer))
++        self->v4l2output->mode = mode;
++    }
++  }
++  /* It is possible that a system buffer is received when the number of
++   * buffers runs low. */
++  if (self->v4l2output->mode == GST_V4L2_IO_DMABUF_IMPORT
++      && !gst_is_dmabuf_memory (gst_buffer_peek_memory (frame->input_buffer,
++              0))) {
++    frame->output_buffer = NULL;
++    goto drop;
++  }
++
+   task_state = gst_pad_get_task_state (GST_VIDEO_ENCODER_SRC_PAD (self));
+   if (task_state == GST_TASK_STOPPED || task_state == GST_TASK_PAUSED) {
+     /* It is possible that the processing thread stopped due to an error or
+-- 
+2.43.0
+

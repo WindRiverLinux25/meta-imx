@@ -1,0 +1,36 @@
+From 0f7fb9ddbf1792a1c06761a5809ac1a9118c1fcc Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 18 Jan 2021 17:23:52 +0800
+Subject: [PATCH 27/75] MMFMWK-8930 v4l2videodec: exchange
+ V4L2_PIX_FMT_VC1_ANNEX_G and V4L2_PIX_FMT_VC1_ANNEX_L
+
+VC1_L and VC1_G are reversed in driver and v4l2 plugin for amphion.
+Driver has exchanged them, so we also need to modify accordingly here.
+
+Upstream-Status: Pending
+
+(cherry picked from commit ad235c60d33c4b15cf92dd7e99a688e1b3e471de)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 1af0932..1efa18e 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -1963,9 +1963,9 @@ gst_v4l2_object_get_caps_info (GstV4l2Object * v4l2object, GstCaps * caps,
+   } else if (g_str_equal (mimetype, "video/x-wmv")) {
+      const gchar *format = gst_structure_get_string (structure, "format");
+      if (format) {
+-       if (!g_ascii_strcasecmp (format, "WMV3"))
++	if (!g_ascii_strcasecmp (format, "WVC1"))
+            fourcc = V4L2_PIX_FMT_VC1_ANNEX_G;
+-       else if (!g_ascii_strcasecmp (format, "WVC1"))
++	else if (!g_ascii_strcasecmp (format, "WMV3"))
+            fourcc = V4L2_PIX_FMT_VC1_ANNEX_L;
+     }
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,32 @@
+From 796e759a82dfa8988192e74a853196020d871b0e Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Wed, 12 Jun 2019 15:16:38 -0700
+Subject: [PATCH 18/75] v4l2allocator: avoid map/unmap every frame as
+ GstVideoFilter map/unmap video frame every frame.
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+(cherry picked from commit fe4863bc2939e43801fd51502659e4c11582b1bd)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2allocator.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2allocator.c b/sys/v4l2/gstv4l2allocator.c
+index aa54b9a..d2da938 100644
+--- a/sys/v4l2/gstv4l2allocator.c
++++ b/sys/v4l2/gstv4l2allocator.c
+@@ -932,7 +932,8 @@ gst_v4l2_allocator_alloc_dmabuf (GstV4l2Allocator * allocator,
+     mem = (GstV4l2Memory *) group->mem[i];
+ 
+     dma_mem = gst_fd_allocator_alloc (dmabuf_allocator, mem->dmafd,
+-        group->planes[i].length, GST_FD_MEMORY_FLAG_DONT_CLOSE);
++        group->planes[i].length,
++        GST_FD_MEMORY_FLAG_DONT_CLOSE | GST_FD_MEMORY_FLAG_KEEP_MAPPED);
+     gst_memory_resize (dma_mem, group->planes[i].data_offset,
+         group->planes[i].length - group->planes[i].data_offset);
+ 
+-- 
+2.43.0
+

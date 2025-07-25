@@ -1,0 +1,45 @@
+From df6fdfc88b7058fce64b7a9af0c11fab6f312a20 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 31 May 2024 15:16:48 +0800
+Subject: [PATCH 63/75] LF-12547 v4l2videodec: fix webcamera fail when imx95
+ servers as receiver
+
+With webcamera, v4l2decoder received caps may have no width
+and height info. Then decoder will use 0x0 to do downscale,
+which further causes negotiation issue. Need to fixed by:
+
+1. If queried size is a range, not downscale.
+2. If width and height in caps is missing, still can downscale as
+   actual size has been parsed after source change.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index afe1884..c037156 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -860,8 +860,15 @@ gst_v4l2_video_dec_set_selection (GstVideoDecoder * decoder)
+   if (value && G_VALUE_TYPE (value) == G_TYPE_INT)
+     height = g_value_get_int (value);
+ 
+-  if (width >= src_width / 8 && width <= src_width &&
+-      height >= src_height / 8 && height <= src_height) {
++  /* not downscale if queried size is a range */
++  if (!width || !height)
++    goto out;
++
++  /* still downscale if size info is missing in caps as actual
++   * size has been parsed after source change */
++  if ((!src_width && !src_height) || (width >= src_width / 8
++          && width <= src_width && height >= src_height / 8
++          && height <= src_height)) {
+     GST_INFO_OBJECT (v4l2object->dbg_obj, "want to s_selection %dx%d", width,
+         height);
+ 
+-- 
+2.43.0
+

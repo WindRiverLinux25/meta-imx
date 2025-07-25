@@ -1,0 +1,75 @@
+From d8d58d3781046057b5e04c6140875bf240a14baf Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Tue, 19 Jul 2022 15:15:01 +0800
+Subject: [PATCH 37/75] LF-6531 v4l2: support stream with V4L2_FIELD_SEQ_TB
+ field
+
+Add function to detect upstream amphion, upstream amphion vpu
+driver use V4L2_FIELD_SEQ_TB instead of V4L2_FIELD_INTERLACED
+and gst_v4l2_object_acquire_format will report unsupported field.
+So need to convert V4L2_FIELD_SEQ_TB to V4L2_FIELD_INTERLACED
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 13 +++++++++++--
+ sys/v4l2/v4l2_calls.c    |  3 ++-
+ 2 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 07a05c2..4f98046 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -2160,6 +2160,7 @@ gst_v4l2_object_get_interlace_mode (enum v4l2_field field,
+     case V4L2_FIELD_INTERLACED:
+     case V4L2_FIELD_INTERLACED_TB:
+     case V4L2_FIELD_INTERLACED_BT:
++    case V4L2_FIELD_SEQ_TB:
+       *interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+       return TRUE;
+     case V4L2_FIELD_ALTERNATE:
+@@ -4200,8 +4201,15 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+   if (gst_v4l2_object_get_interlace_mode (format.fmt.pix.field,
+           &info.interlace_mode)) {
+     if (gst_structure_has_field (s, "interlace-mode")) {
+-      if (format.fmt.pix.field != field)
+-        goto invalid_field;
++      if ((format.fmt.pix.field == V4L2_FIELD_SEQ_TB)
++          && (field == V4L2_FIELD_INTERLACED)) {
++        GST_DEBUG_OBJECT (v4l2object->dbg_obj,
++            "bypass field check if field from driver: %s and current field: %s",
++            field_to_str (format.fmt.pix.field), field_to_str (field));
++      } else {
++        if (format.fmt.pix.field != field)
++          goto invalid_field;
++      }
+     }
+   } else {
+     /* The driver (or libv4l2) is miss-behaving, just ignore interlace-mode from
+@@ -4625,6 +4633,7 @@ gst_v4l2_object_acquire_format (GstV4l2Object * v4l2object, GstVideoInfo * info)
+     case V4L2_FIELD_INTERLACED:
+     case V4L2_FIELD_INTERLACED_TB:
+     case V4L2_FIELD_INTERLACED_BT:
++    case V4L2_FIELD_SEQ_TB:
+       interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+       break;
+     case V4L2_FIELD_ALTERNATE:
+diff --git a/sys/v4l2/v4l2_calls.c b/sys/v4l2/v4l2_calls.c
+index e273f32..3e9b1b7 100644
+--- a/sys/v4l2/v4l2_calls.c
++++ b/sys/v4l2/v4l2_calls.c
+@@ -606,7 +606,8 @@ gst_v4l2_open (GstV4l2Object * v4l2object, GstV4l2Error * error)
+     v4l2object->dont_use_dmabuf = TRUE;
+   }
+ 
+-  if (!strcmp ((char *) v4l2object->vcap.driver, "vpu B0")) {
++  if ((!strcmp ((char *) v4l2object->vcap.driver, "vpu B0")) ||
++      (!strcmp ((char *) v4l2object->vcap.driver, "amphion-vpu"))) {
+     v4l2object->is_amphion = TRUE;
+   }
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,34 @@
+From e0b5c458e1f10d5c0210d7e1875941baaa5e6122 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 17 Oct 2023 14:59:42 +0900
+Subject: [PATCH 51/75] MMFMWK-9280 pulsesink: need break the slient data loop
+ when flushing
+
+if there is no enough audio data send to pulsesink, it will entry
+a slient data loop and cannot been broken when flushing pipeline
+we need check if pulse has been paused and skip the loop
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/pulse/pulsesink.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/ext/pulse/pulsesink.c b/ext/pulse/pulsesink.c
+index 1353a1e..478e639 100644
+--- a/ext/pulse/pulsesink.c
++++ b/ext/pulse/pulsesink.c
+@@ -1603,6 +1603,10 @@ gst_pulseringbuffer_commit (GstAudioRingBuffer * buf, guint64 * sample,
+               continue;
+             }
+ 
++            /* check if we was paused when pipeline flushing */
++            if (pbuf->paused)
++              goto was_paused;
++
+             if (pbuf->corked) {
+               /* we uncork when the read_index is too far behind write_index */
+               if (info->read_index + bufsize <= info->write_index) {
+-- 
+2.43.0
+

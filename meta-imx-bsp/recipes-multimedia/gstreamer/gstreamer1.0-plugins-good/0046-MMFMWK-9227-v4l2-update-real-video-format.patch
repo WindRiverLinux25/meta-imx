@@ -1,0 +1,31 @@
+From c3abd9b35f95910db5c0d57712334838865314f6 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Tue, 18 Apr 2023 15:02:13 +0800
+Subject: [PATCH 46/75] MMFMWK-9227 v4l2: update real video format
+
+use the specific fourcc V4L2_PIX_FMT_RV30 and V4L2_PIX_FMT_RV40
+instead of the inappropriate general fourcc V4L2_PIX_FMT_RV.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/ext/videodev2.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/sys/v4l2/ext/videodev2.h b/sys/v4l2/ext/videodev2.h
+index 73499cb..a2951f7 100644
+--- a/sys/v4l2/ext/videodev2.h
++++ b/sys/v4l2/ext/videodev2.h
+@@ -724,7 +724,6 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_H264     v4l2_fourcc('H', '2', '6', '4') /* H264 with start codes */
+ #define V4L2_PIX_FMT_H264_NO_SC v4l2_fourcc('A', 'V', 'C', '1') /* H264 without start codes */
+ #define V4L2_PIX_FMT_H264_MVC v4l2_fourcc('M', '2', '6', '4') /* H264 MVC */
+-#define V4L2_PIX_FMT_RV       v4l2_fourcc('R', 'V', '0', '0') /* RV8/9/10 */
+ #define V4L2_PIX_FMT_VP6      v4l2_fourcc('V', 'P', '6', '0') /* VP6 */
+ #define V4L2_PIX_FMT_AVS      v4l2_fourcc('A', 'V', 'S', '0') /* AVS */
+ #define V4L2_PIX_FMT_SPK      v4l2_fourcc('S', 'P', 'K', '0') /* Sorenson Spark */
+-- 
+2.43.0
+

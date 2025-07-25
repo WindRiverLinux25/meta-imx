@@ -1,0 +1,93 @@
+From 31738eab568709111abc8353f519c4c0140b55c4 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 17 Mar 2022 15:46:00 +0800
+Subject: [PATCH 34/75] v4l2: Use warning log instead of error log and
+ g_warning
+
+Amphion encoder will dequeue one more buffer with bytesused=0 to user as it uses
+ringbuffer. Timestamp manager is kept in amphion driver. So this last buffer's
+timestamp is marked as last index plus frame->duration, which cannot satisfy
+GST_BUFFER_TIMESTAMP (buffer) % GST_SECOND == 0. So use warning log instead.
+
+There is one case that frame[1] and frame[2] have the same timestamp. frame[1]
+is decoded but cannot be output, while frame[2] can both be decoded and output.
+Then frame list will always has the oldest frame with this timestamp and index
+[1] until current frame number becomes 102. At this time, v4l2 decoder drops
+frame[1] as (102-1 = 101) >100. This is not a real bug, so use GST_WARNING
+instead of g_warning.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 9 +++++----
+ sys/v4l2/gstv4l2videoenc.c | 4 ++--
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 7bc5c8d..dda6279 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -762,7 +762,7 @@ gst_v4l2_video_dec_finish (GstVideoDecoder * decoder)
+       gst_video_decoder_drop_frame (decoder, frame);
+     }
+     if (self->output_flow == GST_FLOW_OK) {
+-      g_warning ("%s: %i frames %u-%u left undrained after CMD_STOP, "
++      GST_WARNING ("%s: %i frames %u-%u left undrained after CMD_STOP, "
+           "eos sent too early: bug in decoder -- please file a bug",
+           GST_ELEMENT_NAME (decoder), counter, first, last);
+     }
+@@ -919,7 +919,7 @@ gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
+     goto beach;
+ 
+   if (GST_BUFFER_TIMESTAMP (buffer) % GST_SECOND != 0)
+-    GST_ERROR_OBJECT (decoder,
++    GST_WARNING_OBJECT (decoder,
+         "Driver bug detected - check driver with v4l2-compliance from http://git.linuxtv.org/v4l-utils.git");
+   GST_LOG_OBJECT (decoder, "Got buffer for frame number %u",
+       (guint32) (GST_BUFFER_TIMESTAMP (buffer) / GST_SECOND));
+@@ -948,7 +948,8 @@ gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
+         oldest_frame = NULL;
+ 
+         if (!warned) {
+-          g_warning ("%s: Too old frames, bug in decoder -- please file a bug",
++          GST_WARNING
++              ("%s: Too old frames, bug in decoder -- please file a bug",
+               GST_ELEMENT_NAME (decoder));
+           warned = TRUE;
+         }
+@@ -971,7 +972,7 @@ gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
+             oldest_frame = NULL;
+           }
+         }
+-        g_warning
++        GST_WARNING
+             ("%s: %i initial frames were not dequeued: bug in decoder -- please file a bug",
+             GST_ELEMENT_NAME (decoder), counter);
+       }
+diff --git a/sys/v4l2/gstv4l2videoenc.c b/sys/v4l2/gstv4l2videoenc.c
+index 0654ca1..8663437 100644
+--- a/sys/v4l2/gstv4l2videoenc.c
++++ b/sys/v4l2/gstv4l2videoenc.c
+@@ -692,7 +692,7 @@ gst_v4l2_video_enc_loop (GstVideoEncoder * encoder)
+     goto beach;
+ 
+   if (GST_BUFFER_TIMESTAMP (buffer) % GST_SECOND != 0)
+-    GST_ERROR_OBJECT (encoder,
++    GST_WARNING_OBJECT (encoder,
+         "Driver bug detected - check driver with v4l2-compliance from http://git.linuxtv.org/v4l-utils.git");
+   GST_LOG_OBJECT (encoder, "Got buffer for frame number %u",
+       (guint32) (GST_BUFFER_PTS (buffer) / GST_SECOND));
+@@ -712,7 +712,7 @@ gst_v4l2_video_enc_loop (GstVideoEncoder * encoder)
+       oldest_frame = NULL;
+ 
+       if (!warned) {
+-        g_warning ("%s: Too old frames, bug in encoder -- please file a bug",
++        GST_WARNING ("%s: Too old frames, bug in encoder -- please file a bug",
+             GST_ELEMENT_NAME (encoder));
+         warned = TRUE;
+       }
+-- 
+2.43.0
+

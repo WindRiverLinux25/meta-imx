@@ -1,0 +1,32 @@
+From 7c5cb037e41effca73544e772e01a78b3d1d8020 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Tue, 20 Oct 2020 23:43:59 +0800
+Subject: [PATCH 23/75] v4l2videodec: set max buffer count with min count.
+
+Output buffer pool set configure will fail if max diff with min count.
+
+Upstream-Status: Pending
+
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit fdb5f89c73907722705fe4635af2e2095bf8f2a1)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index b4ff874..f016cb3 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -960,7 +960,7 @@ gst_v4l2_video_dec_handle_frame (GstVideoDecoder * decoder,
+     GstStructure *config = gst_buffer_pool_get_config (pool);
+     guint min = MAX (self->v4l2output->min_buffers,
+         GST_V4L2_MIN_BUFFERS (self->v4l2output));
+-    guint max = VIDEO_MAX_FRAME;
++    guint max = min;
+     guint32 dummy_frame_number = 0;
+ 
+     GST_DEBUG_OBJECT (self, "Sending header");
+-- 
+2.43.0
+

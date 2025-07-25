@@ -1,0 +1,39 @@
+From dc702ad245c0a33c17afd82dddc173f6200ad38b Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Fri, 13 Sep 2024 16:55:34 +0900
+Subject: [PATCH 67/75] LF-13494 v4l2: set min_buffers to 2 if driver didn't
+ provide this value
+
+Upstream-Status: Pending
+
+This is workaround to fix camera preview performance issue on imx95
+currently isi capture driver didn't implement below cid which can
+provide this value to userspace, if use default 0, our plugin only
+will add 4 extra buffers, it is not enough to run stream at 60fps.
+waylandsink will hold 2 buffers, one for showing and one for last
+buffer, only left 2 buffer inside capture driver.
+
+So set the default min_buffers to 2 to avoid performance drop
+
+V4L2_CID_MIN_BUFFERS_FOR_CAPTURE  //get min_buffers via this cid
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 0f216c0..31d23f2 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -901,7 +901,7 @@ gst_v4l2_get_driver_min_buffers (GstV4l2Object * v4l2object)
+         "driver requires a minimum of %d buffers", control.value);
+     v4l2object->min_buffers = control.value;
+   } else {
+-    v4l2object->min_buffers = 0;
++    v4l2object->min_buffers = 2;
+   }
+ }
+ 
+-- 
+2.43.0
+

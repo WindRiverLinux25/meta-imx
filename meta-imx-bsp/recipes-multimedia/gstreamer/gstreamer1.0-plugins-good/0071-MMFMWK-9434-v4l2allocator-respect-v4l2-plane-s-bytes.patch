@@ -1,0 +1,51 @@
+From 03580d7710c71923049670cfc5b42ec04c09ebc6 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 22 Oct 2024 13:33:02 +0800
+Subject: [PATCH 71/75] MMFMWK-9434 v4l2allocator: respect v4l2 plane's
+ bytesused calculated by import_dmabuf
+
+When libcamerasrc is connected to v4l2 encoder, gstreamer first update
+encoder sink's v4l2 planes by import_dmabuf, then queue buffer to vpu
+driver. Current code always updates v4l2 plane's bytesused according to
+memory block when qbuf.
+
+For ap1302 libcamerasrc on imx95, if setting format as NV12, buffer
+has 2 memory blocks but shares 1 fd. v4l2 plane's bytesused is updated
+to a different value when qbuf. So need to respect v4l2 plane's
+bytesused calculated by import_dmabuf.
+
+Upstream-Status: Pending
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2allocator.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2allocator.c b/sys/v4l2/gstv4l2allocator.c
+index 15d7bb9..a37dc4c 100644
+--- a/sys/v4l2/gstv4l2allocator.c
++++ b/sys/v4l2/gstv4l2allocator.c
+@@ -1336,12 +1336,14 @@ gst_v4l2_allocator_qbuf (GstV4l2Allocator * allocator,
+   g_return_val_if_fail (g_atomic_int_get (&allocator->active), FALSE);
+ 
+   /* update sizes */
+-  if (V4L2_TYPE_IS_MULTIPLANAR (obj->type)) {
+-    for (i = 0; i < group->n_mem; i++)
+-      group->planes[i].bytesused =
+-          gst_memory_get_sizes (group->mem[i], NULL, NULL);
+-  } else {
+-    group->buffer.bytesused = gst_memory_get_sizes (group->mem[0], NULL, NULL);
++  if (obj->mode != GST_V4L2_IO_DMABUF_IMPORT) {
++    if (V4L2_TYPE_IS_MULTIPLANAR (obj->type)) {
++      for (i = 0; i < group->n_mem; i++)
++        group->planes[i].bytesused =
++            gst_memory_get_sizes (group->mem[i], NULL, NULL);
++    } else {
++      group->buffer.bytesused = gst_memory_get_sizes (group->mem[0], NULL, NULL);
++    }
+   }
+ 
+   /* Ensure the memory will stay around and is RO */
+-- 
+2.43.0
+

@@ -1,0 +1,56 @@
+From 4db1b83c083ccd81e90fb6ad2e2664db7f163179 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 22 Oct 2024 08:35:01 +0800
+Subject: [PATCH 70/75] LF-13169 v4l2: skip pollerr if capture queue has not
+ set up
+
+For streams whose video formats are xvid and mpeg4, there is no
+corresponding parser to drop the non-I frames before first IDR
+frame. Before parsing the sequence header in first IDR, capture
+is polling to wait source change event with capture off and capture
+queue empty. Output queue may be empty if buffer is consumed before
+more buffers queued. Driver reports pollerr if both queues are
+empty or off, then gstreamer exits unexpectedly.
+
+Since driver reverts "LF-13169: mxc: vpu: hantro_v4l2: avoid pollerr
+before sequence header parsed", gstreamer needs to skip pollerr if
+capture queue has not setup yet.
+
+Upstream-Status: Pending
+
+/mnt/streams/ttVector/SHAVectors/XvidDec/Conformance/ASP/Xvid_ASP5_624x352_23.976_2191_a_mp3_44_743_2_1st-key-frame-is-the-42th-frame_16.Alias5x01ProphetFive.avi
+/mnt/streams/ttVector/SHAVectors/SOWT/Conformance/Mpeg4_ASP3_1280x720_30_4958_SOWT_48_1536_2_Kaleidoscope.mov
+/mnt/streams/ttVector/SHAVectors/Metadata/MP4/MP4/AAC_44_224kbps_LoveAndTheCity_ARTWORK.mp4
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 31d23f2..27d2e77 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -5966,8 +5966,18 @@ again:
+     }
+   }
+ 
+-  if (gst_poll_fd_has_error (v4l2object->poll, &v4l2object->pollfd))
+-    goto select_error;
++  if (gst_poll_fd_has_error (v4l2object->poll, &v4l2object->pollfd)) {
++    GstBufferPool *pool = gst_v4l2_object_get_buffer_pool (v4l2object);
++    if (V4L2_TYPE_IS_OUTPUT (v4l2object->type) || (pool && GST_V4L2_BUFFER_POOL_IS_STREAMING (pool))) {
++      if (pool)
++        gst_object_unref (pool);
++      goto select_error;
++    } else {
++      if (pool)
++        gst_object_unref (pool);
++      goto again;
++    }
++  }
+ 
+   /* PRI is used to signal that events are available */
+   if (gst_poll_fd_has_pri (v4l2object->poll, &v4l2object->pollfd)) {
+-- 
+2.43.0
+

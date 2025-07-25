@@ -1,0 +1,30 @@
+From fcc58f81f4496eb5eadede2a0dbbb639e930ba50 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Wed, 23 May 2018 14:15:59 -0700
+Subject: [PATCH 11/75] v4l2videodec: needn't unref caps after unref query.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=752962
+
+Upstream-Status: Pending
+
+(cherry picked from commit b0d3bde48842d4da1e28a7c4be49477c544d6f7c)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index d9f6b7d..8c9878f 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -300,7 +300,6 @@ gst_v4l2_video_dec_set_format (GstVideoDecoder * decoder,
+         GstQuery *query = gst_query_new_allocation (caps, FALSE);
+         gst_pad_peer_query (decoder->srcpad, query);
+         gst_query_unref (query);
+-        gst_caps_unref (caps);
+       }
+     }
+ 
+-- 
+2.43.0
+

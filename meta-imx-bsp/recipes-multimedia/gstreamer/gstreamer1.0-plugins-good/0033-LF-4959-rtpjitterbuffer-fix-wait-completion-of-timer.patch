@@ -1,0 +1,39 @@
+From 9166e6e45a5e62828385ea6b3e472884c7f04af2 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 25 Nov 2021 16:17:38 +0800
+Subject: [PATCH 33/75] LF-4959 rtpjitterbuffer: fix wait completion of timer
+ waiting
+
+For some platform with low performance, the eos event here is
+later than previous call of wait_next_time() on eos, it will
+wait in that thread, so wait here will cause completion, need
+signal that thread first
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/1390
+
+(cherry picked from commit 723dedafc7ecc52188bc44e434bc9adaa498efd5)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/rtpmanager/gstrtpjitterbuffer.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index 7efdf2d..7b8d93c 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -3948,6 +3948,11 @@ pop_and_push_next (GstRtpJitterBuffer * jitterbuffer, guint seqnum)
+   if (type == ITEM_TYPE_EVENT && outevent &&
+       GST_EVENT_TYPE (outevent) == GST_EVENT_EOS) {
+     g_assert (priv->eos);
++    /* For some platform with low performance, the eos event here is
++     * later than previous call of wait_next_time() on eos, it will
++     * wait in that thread, so wait here will cause completion, need
++     * signal that thread first */
++    JBUF_SIGNAL_TIMER (priv);
+     while (rtp_timer_queue_length (priv->timers) > 0) {
+       /* Stopping timers */
+       unschedule_current_timer (jitterbuffer);
+-- 
+2.43.0
+

@@ -1,0 +1,101 @@
+From a93f293aab9fa12b418ec05a530e11004f719c1a Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 26 Mar 2024 08:36:42 +0800
+Subject: [PATCH 59/75] v4l2: fix critical warning when playing 10bit stream
+
+This commit is needed to fix the side effect of commit
+3387751fcf196bdd7e5cceff62710785f352f7d6. Otherwise planes
+of 10 bit stream will be recalculated with padding size.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2bufferpool.c | 26 ++++++++++++++------------
+ sys/v4l2/gstv4l2object.c     | 10 ++++++++--
+ 2 files changed, 22 insertions(+), 14 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index 30c2c76..91ef3e9 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -771,20 +771,20 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+           gst_v4l2_buffer_pool_complete_release_buffer (bpool, buffer, FALSE);
+         else {
+           /* in some cases, the total size of buffer is
+-          greater than the pool configured size. Need to
+-          resize it to avoid free buffer when release it */
++             greater than the pool configured size. Need to
++             resize it to avoid free buffer when release it */
+           gsize buf_size;
+           gsize offset;
+ 
+-          buf_size = gst_buffer_get_size(buffer);
++          buf_size = gst_buffer_get_size (buffer);
+           if (obj->info.size < buf_size) {
+             gst_buffer_get_sizes (buffer, &offset, NULL);
+             gst_buffer_resize (buffer, -offset, obj->info.size);
+ 
+             GST_DEBUG_OBJECT (pool, "pool size: %" G_GSIZE_FORMAT
+-            ", capture buffer size: %" G_GSIZE_FORMAT
+-            ", need to resize capture buffer to avoid free it",
+-            obj->info.size, buf_size);
++                ", capture buffer size: %" G_GSIZE_FORMAT
++                ", need to resize capture buffer to avoid free it",
++                obj->info.size, buf_size);
+           }
+ 
+           /* Don't re-enqueue capture buffer on stop */
+@@ -1335,8 +1335,6 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+   timestamp = GST_TIMEVAL_TO_TIME (group->buffer.timestamp);
+ 
+   for (i = 0; i < group->n_mem; i++) {
+-    const GstVideoFormatInfo *finfo = info->finfo;
+-
+     GST_LOG_OBJECT (pool,
+         "dequeued buffer %p seq:%d (ix=%d), mem %p used %d, plane=%d, flags %08x, ts %"
+         GST_TIME_FORMAT ", pool-queued=%d, buffer=%p, previous-state=%i",
+@@ -1352,12 +1350,16 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+       /* Ensure our offset matches the expected plane size, or image size if
+        * there is only one memory */
+       if (group->n_mem == 1) {
+-        gst_memory_resize (group->mem[0], 0, info->size + info->offset[0]);
++        if (G_LIKELY (info->size + info->offset[0] <= group->mem[0]->maxsize))
++          gst_memory_resize (group->mem[0], 0, info->size + info->offset[0]);
++        else {
++          GST_WARNING_OBJECT (pool,
++              "v4l2 provided buffer that is too big for the memory it was "
++              "writing into.");
++          gst_memory_resize (group->mem[0], 0, group->mem[0]->maxsize);
++        }
+         break;
+       }
+-
+-      if (!GST_VIDEO_FORMAT_INFO_IS_TILED (finfo))
+-        gst_memory_resize (group->mem[i], 0, obj->plane_size[i]);
+     }
+   }
+ 
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index f94e214..6508969 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3537,8 +3537,14 @@ gst_v4l2_object_save_format (GstV4l2Object * v4l2object,
+           "Left and top padding is not permitted for tiled formats");
+     memset (v4l2object->plane_size, 0, sizeof (v4l2object->plane_size));
+   } else {
+-    if (!gst_video_info_align_full (info, align, v4l2object->plane_size)) {
+-      GST_WARNING_OBJECT (v4l2object->dbg_obj, "Failed to align video info");
++    for (i = 0; i < finfo->n_planes; i++) {
++      gint vedge, hedge;
++
++      hedge = GST_VIDEO_FORMAT_INFO_SCALE_WIDTH (finfo, i, align->padding_left);
++      vedge = GST_VIDEO_FORMAT_INFO_SCALE_HEIGHT (finfo, i, align->padding_top);
++
++      info->offset[i] += (vedge * info->stride[i]) +
++          (hedge * GST_VIDEO_INFO_COMP_PSTRIDE (info, i));
+     }
+   }
+ 
+-- 
+2.43.0
+

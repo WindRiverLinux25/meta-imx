@@ -1,0 +1,91 @@
+From c8afb7b1fbbbb788c865106227d7cad88a892314 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Mon, 9 Jan 2023 16:27:07 +0800
+Subject: [PATCH 45/75] MMFMWK-9190 ac3parse: collect all eac3 substream and
+ send it with independent stream
+
+For eac3 audio of more than 5.1 channels, it will has substream.
+Need collect all eac3 substream and send it with dependent stream to fix timestamp issue.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/audioparsers/gstac3parse.c | 32 ++++++++++++++++++++++++++++++++
+ gst/audioparsers/gstac3parse.h |  2 ++
+ 2 files changed, 34 insertions(+)
+
+diff --git a/gst/audioparsers/gstac3parse.c b/gst/audioparsers/gstac3parse.c
+index 44e75ff..01b4371 100644
+--- a/gst/audioparsers/gstac3parse.c
++++ b/gst/audioparsers/gstac3parse.c
+@@ -213,6 +213,8 @@ gst_ac3_parse_reset (GstAc3Parse * ac3parse)
+   ac3parse->sample_rate = -1;
+   ac3parse->blocks = -1;
+   ac3parse->eac = FALSE;
++  ac3parse->sub_stream_idx = 0;
++  ac3parse->sub_stream_num = 0;
+   ac3parse->sent_codec_tag = FALSE;
+   g_atomic_int_set (&ac3parse->align, GST_AC3_PARSE_ALIGN_NONE);
+ }
+@@ -396,6 +398,11 @@ gst_ac3_parse_frame_header_eac3 (GstAc3Parse * ac3parse, GstBuffer * buf,
+   if (G_UNLIKELY (strmtyp == 3)) {
+     GST_DEBUG_OBJECT (ac3parse, "bad strmtyp %d", strmtyp);
+     goto cleanup;
++  } else if (strmtyp == 1) {
++    ac3parse->sub_stream_idx++;
++  } else if (strmtyp == 0) {
++    ac3parse->sub_stream_num = ac3parse->sub_stream_idx;
++    ac3parse->sub_stream_idx = 0;
+   }
+ 
+   strmid = gst_bit_reader_get_bits_uint8_unchecked (&bits, 3);  /* substreamid */
+@@ -592,6 +599,31 @@ gst_ac3_parse_handle_frame (GstBaseParse * parse,
+       } while (sid);
+     }
+ 
++    /* We're now at the next frame, so no need to skip if resyncing */
++    frmsiz = 0;
++  } else {
++    if ((sid == 0) && (ac3parse->sub_stream_num)) {
++      GST_LOG_OBJECT (ac3parse, "has substream, total number %d", ac3parse->sub_stream_num);
++      framesize = 0;
++
++      /* Loop till we get all substream */
++      gint loop = ac3parse->sub_stream_num;
++      do {
++        framesize += frmsiz;
++
++        if (!gst_byte_reader_skip (&reader, frmsiz)
++            || map.size < (framesize + 6)) {
++          more = TRUE;
++          break;
++        }
++
++        if (!gst_ac3_parse_frame_header (ac3parse, buf, framesize, &frmsiz,
++                NULL, NULL, NULL, &sid, &eac)) {
++          *skipsize = off + 2;
++          goto cleanup;
++        }
++      } while (loop--);
++    }
+     /* We're now at the next frame, so no need to skip if resyncing */
+     frmsiz = 0;
+   }
+diff --git a/gst/audioparsers/gstac3parse.h b/gst/audioparsers/gstac3parse.h
+index 81e2104..6de74db 100644
+--- a/gst/audioparsers/gstac3parse.h
++++ b/gst/audioparsers/gstac3parse.h
+@@ -64,6 +64,8 @@ struct _GstAc3Parse {
+   gboolean              sent_codec_tag;
+   gint                  align;
+   GstPadChainFunction   baseparse_chainfunc;
++  gint                  sub_stream_idx;
++  gint                  sub_stream_num;
+ };
+ 
+ /**
+-- 
+2.43.0
+

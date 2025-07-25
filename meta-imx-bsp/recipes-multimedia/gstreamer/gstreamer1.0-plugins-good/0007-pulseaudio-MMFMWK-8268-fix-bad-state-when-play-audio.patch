@@ -1,0 +1,39 @@
+From 1c24caa3c6e940136be8f3262e6d49783c982208 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 4 Jan 2019 16:29:41 +0800
+Subject: [PATCH 07/75] pulseaudio:[MMFMWK-8268] fix bad state when play audio
+ with varying channels
+
+Not to check the state of stream in function gst_pulsesink_get_sink_input_info()
+to void the disconnected error when play audio with varying channels.
+
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-good/issues/539
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+(cherry picked from commit 17aa490448abcc7d646d6f2883637c236b952e7c)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/pulse/pulsesink.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100755 => 100644 ext/pulse/pulsesink.c
+
+diff --git a/ext/pulse/pulsesink.c b/ext/pulse/pulsesink.c
+old mode 100755
+new mode 100644
+index 5fea927..1d87d8c
+--- a/ext/pulse/pulsesink.c
++++ b/ext/pulse/pulsesink.c
+@@ -2622,7 +2622,7 @@ gst_pulsesink_get_sink_input_info (GstPulseSink * psink, gdouble * volume,
+ 
+   while (pa_operation_get_state (o) == PA_OPERATION_RUNNING) {
+     pa_threaded_mainloop_wait (mainloop);
+-    if (gst_pulsering_is_dead (psink, pbuf, TRUE))
++    if (gst_pulsering_is_dead (psink, pbuf, FALSE))
+       goto unlock;
+   }
+ 
+-- 
+2.43.0
+

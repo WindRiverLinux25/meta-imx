@@ -1,0 +1,102 @@
+From 4de3da318ba45176e640db82dcc61ce96e2ee7c9 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Thu, 30 Aug 2018 14:26:11 -0700
+Subject: [PATCH 35/75] v4l2videodec: Add lock for queue and stream off
+
+Add lock for queue and stream off, or v4l2 core will complain it.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=752962
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing<bing.song@nxp.com>
+
+Conflicts:
+	sys/v4l2/gstv4l2bufferpool.c
+(cherry picked from commit 6c5aa754ce667133ea3b11a6ebb67ed913763e41)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2bufferpool.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index 29f3d9f..4b5051a 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -733,6 +733,8 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+   if (!pool->streaming)
+     return;
+ 
++  GST_OBJECT_LOCK (pool);
++
+   switch (obj->mode) {
+     case GST_V4L2_IO_MMAP:
+     case GST_V4L2_IO_USERPTR:
+@@ -774,6 +776,8 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+       g_atomic_int_add (&pool->num_queued, -1);
+     }
+   }
++
++  GST_OBJECT_UNLOCK (pool);
+ }
+ 
+ static gboolean
+@@ -1053,11 +1057,12 @@ gst_v4l2_buffer_pool_orphan (GstV4l2Object * v4l2object)
+   GST_DEBUG_OBJECT (pool, "orphaning pool");
+   gst_buffer_pool_set_active (bpool, FALSE);
+ 
++  gst_v4l2_buffer_pool_streamoff (pool);
++
+   /* We lock to prevent racing with a return buffer in QBuf, and has a
+    * workaround of not being able to use the pool hidden activation lock. */
+   GST_OBJECT_LOCK (pool);
+ 
+-  gst_v4l2_buffer_pool_streamoff (pool);
+   ret = gst_v4l2_allocator_orphan (pool->vallocator);
+   if (ret)
+     pool->orphaned = TRUE;
+@@ -1266,9 +1271,13 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+ 
+   GST_LOG_OBJECT (pool, "dequeueing a buffer");
+ 
++  GST_OBJECT_LOCK (pool);
++
+   res = gst_v4l2_allocator_dqbuf (pool->vallocator, &group);
+-  if (res == GST_V4L2_FLOW_LAST_BUFFER)
++  if (res == GST_V4L2_FLOW_LAST_BUFFER) {
++    GST_OBJECT_UNLOCK (pool);
+     goto eos;
++  }
+   if (res != GST_FLOW_OK)
+     goto dqbuf_failed;
+ 
+@@ -1291,11 +1300,11 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+ 
+   pool->buffers[group->buffer.index] = NULL;
+   if (g_atomic_int_dec_and_test (&pool->num_queued)) {
+-    GST_OBJECT_LOCK (pool);
+     pool->empty = TRUE;
+-    GST_OBJECT_UNLOCK (pool);
+   }
+ 
++  GST_OBJECT_UNLOCK (pool);
++
+   if (group->buffer.flags & V4L2_BUF_FLAG_LAST &&
+       group->planes[0].bytesused == 0) {
+     GST_DEBUG_OBJECT (pool, "Empty last buffer, signalling eos.");
+@@ -1447,10 +1456,12 @@ eos:
+   }
+ dqbuf_failed:
+   {
++    GST_OBJECT_UNLOCK (pool);
+     return GST_FLOW_ERROR;
+   }
+ no_buffer:
+   {
++    GST_OBJECT_UNLOCK (pool);
+     GST_ERROR_OBJECT (pool, "No free buffer found in the pool at index %d.",
+         group->buffer.index);
+     return GST_FLOW_ERROR;
+-- 
+2.43.0
+

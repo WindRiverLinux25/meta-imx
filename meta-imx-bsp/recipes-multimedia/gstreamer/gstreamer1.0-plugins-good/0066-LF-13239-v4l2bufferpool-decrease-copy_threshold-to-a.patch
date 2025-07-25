@@ -1,0 +1,42 @@
+From 05d3d42ec1be3011dac5c18c668abb877216bf75 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Wed, 21 Aug 2024 10:10:35 +0800
+Subject: [PATCH 66/75] LF-13239 v4l2bufferpool: decrease copy_threshold to
+ avoid buffer copy
+
+When transcoding, encodebin doesn't provide allocation parameter, then
+decoder enable copy threshold. If driver is running low on buffers,
+which means the number of buffers queued in driver is less than this
+threshold, decoder needs to allocate one new capture buffer.
+
+For drivers that support CREATE_BUFS, decoder allocates one DMA buffer
+and queue it to driver. For drivers that doesn't support CREATE_BUFS
+such as 8MP, decoder allocates one MMAP buffer and copy the dequeued
+DMA buffer to it, then requeue DMA buffer to driver. Encoder will drop
+this MMAP buffer as it's already in dmabuf_import mode when do
+transcoding, which causes low performance.
+
+To fix it, need to decrease the copy_threshold to avoid buffer copy.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2bufferpool.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index a78329c..0d698d4 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -884,7 +884,7 @@ gst_v4l2_buffer_pool_start (GstBufferPool * bpool)
+         GST_WARNING_OBJECT (pool,
+             "Uncertain or not enough buffers, enabling copy threshold");
+         min_buffers = count;
+-        copy_threshold = min_latency;
++        copy_threshold = GST_V4L2_MIN_BUFFERS (obj);
+       }
+ 
+       break;
+-- 
+2.43.0
+

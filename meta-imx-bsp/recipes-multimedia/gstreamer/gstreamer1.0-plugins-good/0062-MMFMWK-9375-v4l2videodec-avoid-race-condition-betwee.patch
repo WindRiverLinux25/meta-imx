@@ -1,0 +1,52 @@
+From c855279fa5274ab5c2bfb1b407b0a75e4a15d6a1 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 30 Apr 2024 11:05:05 +0800
+Subject: [PATCH 62/75] MMFMWK-9375 v4l2videodec: avoid race condition between
+ drain and source change
+
+When do "c -4" for res-chaneg stream, decoder first dequeue
+a source change event, set the draining flag to TRUE which
+will be used to do capture steamoff and capture streamon.
+
+At this time, decoder drains and set draining flag to FALSE,
+It causes decoder cannot finish source change. Then do seek,
+the last capture streamon is ignored by driver as source change
+is not finished and reschange_notified is still TRUE. Driver
+doesn't send capture streamon command to daemon, which makes
+daemon wait for more buffers to be queued but gstreamer think
+it has finished seek.
+
+To fix this hang issue, need to clear draining flag after
+source change is finished.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 7e9136f..afe1884 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -688,9 +688,6 @@ gst_v4l2_video_dec_finish (GstVideoDecoder * decoder)
+ 
+   GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
+ 
+-  /* If we are in the middle of a source change, cancel it */
+-  self->draining = FALSE;
+-
+   if (gst_v4l2_decoder_cmd (self->v4l2output, V4L2_DEC_CMD_STOP, 0)) {
+     GstTask *task;
+ 
+@@ -737,6 +734,7 @@ gst_v4l2_video_dec_finish (GstVideoDecoder * decoder)
+    * occurred. */
+   gst_v4l2_object_unlock (self->v4l2capture);
+   gst_pad_stop_task (decoder->srcpad);
++  self->draining = FALSE;
+   GST_VIDEO_DECODER_STREAM_LOCK (decoder);
+ 
+   if (ret == GST_FLOW_FLUSHING)
+-- 
+2.43.0
+

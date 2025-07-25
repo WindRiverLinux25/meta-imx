@@ -1,0 +1,49 @@
+From e22f33d7681a401a42e9434ace5123ac94dd00d5 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Wed, 29 May 2019 16:59:26 -0700
+Subject: [PATCH 17/75] v4l2videodec: enable multi-track selection.
+
+Upstream-Status: Pending
+
+Signed-off-by: Song Bing <bing.song@nxp.com>
+(cherry picked from commit 03e725101135b407be369e09ba4c34b993cff471)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c   | 7 +++++++
+ sys/v4l2/gstv4l2videodec.c | 2 +-
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 7434393..8dc7706 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -5388,6 +5388,13 @@ gst_v4l2_object_decide_allocation (GstV4l2Object * obj, GstQuery * query)
+ 
+   can_share_own_pool = (has_video_meta || !obj->need_video_meta);
+ 
++  /* aovid copy Amphion tiled frame buffer for un-active video track */
++  if (obj->is_amphion) {
++    can_share_own_pool = TRUE;
++    if (min < GST_V4L2_MIN_BUFFERS (obj))
++      min = GST_V4L2_MIN_BUFFERS (obj);
++  }
++
+   gst_v4l2_get_driver_min_buffers (obj);
+   /* We can't share our own pool, if it exceed V4L2 capacity */
+   if (min + obj->min_buffers + 1 > VIDEO_MAX_FRAME)
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 7baae49..e95c4d4 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -882,7 +882,7 @@ gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
+     buffer = NULL;
+     ret = gst_video_decoder_finish_frame (decoder, frame);
+ 
+-    if (ret != GST_FLOW_OK)
++    if (!(ret == GST_FLOW_OK || ret == GST_FLOW_NOT_LINKED))
+       goto beach;
+   } else {
+     GST_WARNING_OBJECT (decoder, "Decoder is producing too many buffers");
+-- 
+2.43.0
+

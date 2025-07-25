@@ -1,0 +1,119 @@
+From cc808b1b397175168b4fb32b1559a29f18674561 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Wed, 24 Jan 2024 13:30:54 +0800
+Subject: [PATCH 57/75] LF-11398 v4l2: set crop meta for decoded buffer
+
+Set crop meta for decoded buffer to make buffers with left and
+top padding show correctly. For cases that need to set capture
+format, get right crop size and set corret align padding.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2object.c   | 48 ++++++--------------------------------
+ sys/v4l2/gstv4l2videodec.c | 11 +++++++++
+ 2 files changed, 18 insertions(+), 41 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 8ff6c43..d9d9fba 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3389,40 +3389,6 @@ no_supported_capture_method:
+   }
+ }
+ 
+-static gboolean
+-gst_v4l2_object_reset_compose_region (GstV4l2Object * obj)
+-{
+-  struct v4l2_selection sel = { 0 };
+-
+-  GST_V4L2_CHECK_OPEN (obj);
+-
+-  sel.type = obj->type;
+-  sel.target = V4L2_SEL_TGT_COMPOSE;
+-
+-  if (obj->ioctl (obj->video_fd, VIDIOC_G_SELECTION, &sel) < 0) {
+-    if (errno == ENOTTY) {
+-      /* No-op when selection API is not supported */
+-      return TRUE;
+-    } else {
+-      GST_WARNING_OBJECT (obj->dbg_obj,
+-          "Failed to get default compose rectangle with VIDIOC_G_SELECTION: %s",
+-          g_strerror (errno));
+-      return FALSE;
+-    }
+-  }
+-
+-  sel.target = V4L2_SEL_TGT_COMPOSE;
+-
+-  if (obj->ioctl (obj->video_fd, VIDIOC_S_SELECTION, &sel) < 0) {
+-    GST_WARNING_OBJECT (obj->dbg_obj,
+-        "Failed to set default compose rectangle with VIDIOC_S_SELECTION: %s",
+-        g_strerror (errno));
+-    return FALSE;
+-  }
+-
+-  return TRUE;
+-}
+-
+ static void
+ gst_v4l2_object_set_stride (GstVideoInfo * info, GstVideoAlignment * align,
+     gint plane, gint stride)
+@@ -4201,15 +4167,18 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+    * in ASF mode for example, there is also not reason for a driver to
+    * change the size. */
+   if (info.finfo->format != GST_VIDEO_FORMAT_ENCODED) {
++    struct v4l2_rect def_crop = { 0 };
+     /* We can crop larger images */
+     if (format.fmt.pix.width < width || format.fmt.pix.height < height)
+       goto invalid_dimensions;
+ 
++    gst_v4l2_object_get_crop_default (v4l2object, &def_crop);
++
+     /* Note, this will be adjusted if upstream has non-centered cropping. */
+-    align.padding_top = 0;
+-    align.padding_bottom = format.fmt.pix.height - height;
+-    align.padding_left = 0;
+-    align.padding_right = format.fmt.pix.width - width;
++    align.padding_top = def_crop.top;
++    align.padding_bottom = format.fmt.pix.height - height - def_crop.top;
++    align.padding_left = def_crop.left;
++    align.padding_right = format.fmt.pix.width - width - def_crop.left;
+   }
+ 
+   if (is_mplane && format.fmt.pix_mp.num_planes != n_v4l_planes)
+@@ -4405,9 +4374,6 @@ done:
+   /* add boolean return, so we can fail on drivers bugs */
+   gst_v4l2_object_save_format (v4l2object, fmtdesc, &format, &info, &align);
+ 
+-  /* reset composition region to match the S_FMT size */
+-  gst_v4l2_object_reset_compose_region (v4l2object);
+-
+   /* now configure the pool */
+   if (!gst_v4l2_object_setup_pool (v4l2object, caps))
+     goto pool_failed;
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 89dd7d8..fb3ad86 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -1057,6 +1057,17 @@ gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
+ 
+     frame->duration = self->v4l2capture->duration;
+     frame->output_buffer = buffer;
++
++    /* set crop info for none-tiled format */
++    if (!GST_VIDEO_FORMAT_INFO_IS_TILED (self->v4l2capture->info.finfo)) {
++      GstVideoCropMeta *cmeta =
++          gst_buffer_add_video_crop_meta (frame->output_buffer);
++      cmeta->x = self->v4l2capture->align.padding_left;
++      cmeta->y = self->v4l2capture->align.padding_top;
++      cmeta->width = self->v4l2capture->info.width;
++      cmeta->height = self->v4l2capture->info.height;
++    }
++
+     if (IS_IMX8MQ () && self->v4l2capture->is_hantro) {
+       guint64 drm_modifier = self->v4l2capture->drm_modifier;
+       gst_buffer_add_dmabuf_meta (frame->output_buffer, drm_modifier);
+-- 
+2.43.0
+

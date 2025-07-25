@@ -1,0 +1,70 @@
+From 907a2313ed5ceb8d0c45ecd9656e6bac959ee62a Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 16 Jun 2022 14:38:24 +0800
+Subject: [PATCH 36/75] MMFMWK-9092 v4l2: Fix race condition between orphaning
+ and stopping allocator
+
+allocator_stop() may be called when allocator is orphaning. It causes dmafd
+leak as capture buffers cannot be freed. So needs to fix the race condition
+between orphaning and stopping allocator.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2bufferpool.c | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index 4b5051a..256eafe 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -733,8 +733,6 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+   if (!pool->streaming)
+     return;
+ 
+-  GST_OBJECT_LOCK (pool);
+-
+   switch (obj->mode) {
+     case GST_V4L2_IO_MMAP:
+     case GST_V4L2_IO_USERPTR:
+@@ -776,8 +774,6 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+       g_atomic_int_add (&pool->num_queued, -1);
+     }
+   }
+-
+-  GST_OBJECT_UNLOCK (pool);
+ }
+ 
+ static gboolean
+@@ -1023,8 +1019,11 @@ gst_v4l2_buffer_pool_stop (GstBufferPool * bpool)
+     pool->other_pool = NULL;
+   }
+ 
+-  if (!pool->orphaned)
++  if (!pool->orphaned) {
++    GST_OBJECT_LOCK (pool);
+     gst_v4l2_buffer_pool_streamoff (pool);
++    GST_OBJECT_UNLOCK (pool);
++  }
+ 
+   ret = GST_BUFFER_POOL_CLASS (parent_class)->stop (bpool);
+ 
+@@ -1057,12 +1056,11 @@ gst_v4l2_buffer_pool_orphan (GstV4l2Object * v4l2object)
+   GST_DEBUG_OBJECT (pool, "orphaning pool");
+   gst_buffer_pool_set_active (bpool, FALSE);
+ 
+-  gst_v4l2_buffer_pool_streamoff (pool);
+-
+   /* We lock to prevent racing with a return buffer in QBuf, and has a
+    * workaround of not being able to use the pool hidden activation lock. */
+   GST_OBJECT_LOCK (pool);
+ 
++  gst_v4l2_buffer_pool_streamoff (pool);
+   ret = gst_v4l2_allocator_orphan (pool->vallocator);
+   if (ret)
+     pool->orphaned = TRUE;
+-- 
+2.43.0
+

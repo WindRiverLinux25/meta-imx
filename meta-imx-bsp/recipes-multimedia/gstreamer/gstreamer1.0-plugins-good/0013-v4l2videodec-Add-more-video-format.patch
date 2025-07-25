@@ -1,0 +1,331 @@
+From 0e6edc27f12a43f1ed740627fedb0ceceee203d6 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Thu, 19 Jul 2018 18:14:05 -0700
+Subject: [PATCH 13/75] v4l2videodec: Add more video format.
+
+Add RMVB/VP6/AVS/Sorenson SPARK/DivX support
+Change divx 3 fourcc according to driver changes.
+Add divx 4/5/6 support.
+Add xvid support.
+Add NV12 10bit support.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=752962
+
+Upstream-Status: Pending
+
+(cherry picked from commit f7050e9cccaeffea08a1508603c1436172d9e47f,
+commit d50cf240395a2e08b698a6f5781824c8b46e7d07,
+commit 6b27d74e288dd71d30c5a7c6a95feb75c277b852,
+commit 877ab457b5fe1db48a326b936e5e9b9f219c2c5c,
+commit ce70fc86006cd2cd654e2cadaa01b2e55f096d23)
+
+ Conflicts:
+	sys/v4l2/ext/videodev2.h
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/ext/videodev2.h   |   8 +++
+ sys/v4l2/gstv4l2object.c   | 103 +++++++++++++++++++++++++++++++++++--
+ sys/v4l2/gstv4l2videodec.c |  19 +++++++
+ 3 files changed, 125 insertions(+), 5 deletions(-)
+
+diff --git a/sys/v4l2/ext/videodev2.h b/sys/v4l2/ext/videodev2.h
+index 2ceb1ca..9028b71 100644
+--- a/sys/v4l2/ext/videodev2.h
++++ b/sys/v4l2/ext/videodev2.h
+@@ -530,6 +530,7 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_BGRA555 v4l2_fourcc('B', 'A', '1', '5') /* 16  BGRA-5-5-5-1  */
+ #define V4L2_PIX_FMT_BGRX555 v4l2_fourcc('B', 'X', '1', '5') /* 16  BGRX-5-5-5-1  */
+ #define V4L2_PIX_FMT_RGB565  v4l2_fourcc('R', 'G', 'B', 'P') /* 16  RGB-5-6-5     */
++#define V4L2_PIX_FMT_BGR565     v4l2_fourcc('B', 'G', 'R', 'P') /* 16  BGR-5-6-5     */
+ #define V4L2_PIX_FMT_RGB555X v4l2_fourcc('R', 'G', 'B', 'Q') /* 16  RGB-5-5-5 BE  */
+ #define V4L2_PIX_FMT_ARGB555X v4l2_fourcc_be('A', 'R', '1', '5') /* 16  ARGB-5-5-5 BE */
+ #define V4L2_PIX_FMT_XRGB555X v4l2_fourcc_be('X', 'R', '1', '5') /* 16  XRGB-5-5-5 BE */
+@@ -624,6 +625,7 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_NV16M   v4l2_fourcc('N', 'M', '1', '6') /* 16  Y/CbCr 4:2:2  */
+ #define V4L2_PIX_FMT_NV61M   v4l2_fourcc('N', 'M', '6', '1') /* 16  Y/CrCb 4:2:2  */
+ #define V4L2_PIX_FMT_P012M   v4l2_fourcc('P', 'M', '1', '2') /* 24  Y/CbCr 4:2:0 12-bit per component */
++#define V4L2_PIX_FMT_NV12_10BIT   v4l2_fourcc('N', 'T', '1', '2') /* Y/CbCr 4:2:0 for 10bit  */
+ 
+ /* three planes - Y Cb, Cr */
+ #define V4L2_PIX_FMT_YUV410  v4l2_fourcc('Y', 'U', 'V', '9') /*  9  YUV 4:1:0     */
+@@ -715,6 +717,12 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_H264     v4l2_fourcc('H', '2', '6', '4') /* H264 with start codes */
+ #define V4L2_PIX_FMT_H264_NO_SC v4l2_fourcc('A', 'V', 'C', '1') /* H264 without start codes */
+ #define V4L2_PIX_FMT_H264_MVC v4l2_fourcc('M', '2', '6', '4') /* H264 MVC */
++#define V4L2_PIX_FMT_RV       v4l2_fourcc('R', 'V', '0', '0') /* RV8/9/10 */
++#define V4L2_PIX_FMT_VP6      v4l2_fourcc('V', 'P', '6', '0') /* VP6 */
++#define V4L2_PIX_FMT_AVS      v4l2_fourcc('A', 'V', 'S', '0') /* AVS */
++#define V4L2_PIX_FMT_SPK      v4l2_fourcc('S', 'P', 'K', '0') /* Sorenson Spark */
++#define V4L2_PIX_FMT_DIV3     v4l2_fourcc('D', 'I', 'V', '3') /* DivX 3 */
++#define V4L2_PIX_FMT_DIVX     v4l2_fourcc('D', 'I', 'V', 'X') /* DivX 4 5 6 */
+ #define V4L2_PIX_FMT_H263     v4l2_fourcc('H', '2', '6', '3') /* H263          */
+ #define V4L2_PIX_FMT_MPEG1    v4l2_fourcc('M', 'P', 'G', '1') /* MPEG-1 ES     */
+ #define V4L2_PIX_FMT_MPEG2    v4l2_fourcc('M', 'P', 'G', '2') /* MPEG-2 ES     */
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 8ce970f..7434393 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -94,6 +94,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (XRGB555X, RGB15),   GST_V4L2_RAW},
+   {MAP_FMT (ARGB555X, UNKNOWN), GST_V4L2_RAW},
+   {MAP_FMT (RGB565, RGB16),     GST_V4L2_RAW},
++  {MAP_FMT (BGR565, BGR16),     GST_V4L2_RAW},
+   {MAP_FMT (RGB565X, UNKNOWN),  GST_V4L2_RAW},
+   {MAP_FMT (BGR666, UNKNOWN),   GST_V4L2_RAW},
+   {MAP_FMT (BGR24, BGR),        GST_V4L2_RAW},
+@@ -148,6 +149,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (YUV444, UNKNOWN), GST_V4L2_RAW},
+   {MAP_FMT (YUV555, UNKNOWN), GST_V4L2_RAW},
+   {MAP_FMT (YUV565, UNKNOWN), GST_V4L2_RAW},
++  {MAP_FMT (YUV24, v308),     GST_V4L2_RAW},
+   {MAP_FMT (YUV32, UNKNOWN),  GST_V4L2_RAW},
+   {MAP_FMT (YUV410, YUV9),    GST_V4L2_RAW},
+   {MAP_FMT (YUV420M, I420),   GST_V4L2_RAW},
+@@ -163,6 +165,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (NV12_16L16, UNKNOWN),               GST_V4L2_RAW},
+   {MAP_FMT (NV12M_8L128, NV12_8L128),           GST_V4L2_RAW},
+   {MAP_FMT (NV12M_10BE_8L128, NV12_10BE_8L128), GST_V4L2_RAW},
++  {MAP_FMT (NV12_10BIT, NV12_10LE40),           GST_V4L2_RAW},
+   {MAP_FMT (NV21M, NV21),                       GST_V4L2_RAW},
+   {MAP_FMT (NV21, NV21),                        GST_V4L2_RAW},
+   {MAP_FMT (NV16M, NV16),                       GST_V4L2_RAW},
+@@ -207,6 +210,13 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (H264_NO_SC, ENCODED),   GST_V4L2_CODEC},
+   {MAP_FMT (H264_MVC, ENCODED),     GST_V4L2_CODEC},
+   {MAP_FMT (HEVC, ENCODED),         GST_V4L2_CODEC},
++  {MAP_FMT (RV30, ENCODED),     GST_V4L2_CODEC},
++  {MAP_FMT (RV40, ENCODED),     GST_V4L2_CODEC},
++  {MAP_FMT (VP6, ENCODED),      GST_V4L2_CODEC},
++  {MAP_FMT (AVS, ENCODED),      GST_V4L2_CODEC},
++  {MAP_FMT (SPK, ENCODED),      GST_V4L2_CODEC},
++  {MAP_FMT (DIV3, ENCODED),     GST_V4L2_CODEC},
++  {MAP_FMT (DIVX, ENCODED),     GST_V4L2_CODEC},
+   {MAP_FMT (H263, ENCODED),         GST_V4L2_CODEC},
+   {MAP_FMT (MPEG1, ENCODED),        GST_V4L2_CODEC},
+   {MAP_FMT (MPEG2, ENCODED),        GST_V4L2_CODEC},
+@@ -1073,6 +1083,7 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+     case V4L2_PIX_FMT_ARGB555X:
+     case V4L2_PIX_FMT_XRGB555X:
+     case V4L2_PIX_FMT_RGB555X:
++    case V4L2_PIX_FMT_BGR565:
+     case V4L2_PIX_FMT_BGR666:
+     case V4L2_PIX_FMT_RGB565:
+     case V4L2_PIX_FMT_RGB565X:
+@@ -1106,6 +1117,8 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+     case V4L2_PIX_FMT_RGBX32:
+     case V4L2_PIX_FMT_ARGB32:
+     case V4L2_PIX_FMT_XRGB32:
++    case V4L2_PIX_FMT_BGR48_12:
++    case V4L2_PIX_FMT_ABGR64_12:
+       rank = RGB_BASE_RANK;
+       break;
+ 
+@@ -1126,6 +1139,12 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+     case V4L2_PIX_FMT_MM21:    /* NV12 Y 16x32, UV 16x16 tile */
+     case V4L2_PIX_FMT_NV12M_8L128:
+     case V4L2_PIX_FMT_NV12M_10BE_8L128:
++    case V4L2_PIX_FMT_YUV24:   /* 24  YUY 4:4:4     */
++    case V4L2_PIX_FMT_P012:
++    case V4L2_PIX_FMT_P012M:
++    case V4L2_PIX_FMT_P010:
++    case V4L2_PIX_FMT_Y212:
++    case V4L2_PIX_FMT_YUV48_12:
+       rank = YUV_ODD_BASE_RANK;
+       break;
+ 
+@@ -1141,6 +1160,7 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+       break;
+     case V4L2_PIX_FMT_NV12:    /* Y/CbCr 4:2:0, 12 bits per pixel */
+     case V4L2_PIX_FMT_NV12M:   /* Same as NV12      */
++    case V4L2_PIX_FMT_NV12_10BIT:      /* 12  Y/CbCr 4:2:0  */
+       rank = YUV_BASE_RANK + 8;
+       break;
+     case V4L2_PIX_FMT_YUYV:    /* YUY2, 16 bits per pixel */
+@@ -1179,6 +1199,7 @@ gst_v4l2_object_format_get_rank (const struct v4l2_fmtdesc *fmt)
+     case V4L2_PIX_FMT_SGBRG8:
+     case V4L2_PIX_FMT_SGRBG8:
+     case V4L2_PIX_FMT_SRGGB8:
++    case V4L2_PIX_FMT_ARGB2101010:
+     case V4L2_PIX_FMT_SBGGR10:
+     case V4L2_PIX_FMT_SGBRG10:
+     case V4L2_PIX_FMT_SGRBG10:
+@@ -1466,11 +1487,13 @@ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
+           "mpegversion", G_TYPE_INT, 2, NULL);
+       break;
+     case V4L2_PIX_FMT_MPEG4:
+-    case V4L2_PIX_FMT_XVID:
+       structure = gst_structure_new ("video/mpeg",
+           "mpegversion", G_TYPE_INT, 4, "systemstream",
+           G_TYPE_BOOLEAN, FALSE, NULL);
+       break;
++    case V4L2_PIX_FMT_XVID:
++      structure = gst_structure_new_empty ("video/x-xvid");
++      break;
+     case V4L2_PIX_FMT_FWHT:
+       structure = gst_structure_new_empty ("video/x-fwht");
+       break;
+@@ -1493,10 +1516,36 @@ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
+           "stream-format", G_TYPE_STRING, "byte-stream", "alignment",
+           G_TYPE_STRING, "au", NULL);
+       break;
++    case V4L2_PIX_FMT_RV30:
++      structure = gst_structure_new ("video/x-pn-realvideo",
++           "version", G_TYPE_INT, 3, NULL);
++      break;
++    case V4L2_PIX_FMT_RV40:
++      structure = gst_structure_new ("video/x-pn-realvideo",
++           "version", G_TYPE_INT, 4, NULL);
++      break;
++    case V4L2_PIX_FMT_VP6:
++      structure = gst_structure_new_empty ("video/x-vp6-flash");
++      break;
++    case V4L2_PIX_FMT_AVS:
++      structure = gst_structure_new_empty ("video/x-cavs");
++      break;
++    case V4L2_PIX_FMT_SPK:
++      structure = gst_structure_new ("video/x-flash-video",
++          "flvversion", G_TYPE_INT, 1, NULL);
++      break;
++    case V4L2_PIX_FMT_DIV3:
++      structure = gst_structure_new ("video/x-divx",
++          "divxversion", G_TYPE_INT, 3, NULL);
++      break;
++    case V4L2_PIX_FMT_DIVX:
++      structure = gst_structure_new ("video/x-divx",
++          "divxversion", GST_TYPE_INT_RANGE, 4, 6, NULL);
++      break;
+     case V4L2_PIX_FMT_VC1_ANNEX_G:
+     case V4L2_PIX_FMT_VC1_ANNEX_L:
+       structure = gst_structure_new ("video/x-wmv",
+-          "wmvversion", G_TYPE_INT, 3, "format", G_TYPE_STRING, "WVC1", NULL);
++          "wmvversion", G_TYPE_INT, 3, NULL);
+       break;
+     case V4L2_PIX_FMT_VP8:
+       structure = gst_structure_new_empty ("video/x-vp8");
+@@ -1893,10 +1942,39 @@ gst_v4l2_object_get_caps_info (GstV4l2Object * v4l2object, GstCaps * caps,
+           break;
+       }
+     }
++
++  } else if (g_str_equal (mimetype, "video/x-xvid")) {
++      fourcc = V4L2_PIX_FMT_XVID;
++  } else if (g_str_equal (mimetype, "video/x-vp6-flash")) {
++      fourcc = V4L2_PIX_FMT_VP6;
++  } else if (g_str_equal (mimetype, "video/x-cavs")) {
++      fourcc = V4L2_PIX_FMT_AVS;
++  } else if (g_str_equal (mimetype, "video/x-flash-video")) {
++      fourcc = V4L2_PIX_FMT_SPK;
++  } else if (g_str_equal (mimetype, "video/x-divx")) {
++      gint divxversion;
++    if (gst_structure_get_int (structure, "divxversion", &divxversion)) {
++       if (divxversion == 3) {
++           fourcc = V4L2_PIX_FMT_DIV3;
++       } else {
++           fourcc = V4L2_PIX_FMT_DIVX;
++       }
++    }
++  } else if (g_str_equal (mimetype, "video/x-wmv")) {
++     const gchar *format = gst_structure_get_string (structure, "format");
++     if (format) {
++       if (!g_ascii_strcasecmp (format, "WMV3"))
++           fourcc = V4L2_PIX_FMT_VC1_ANNEX_G;
++       else if (!g_ascii_strcasecmp (format, "WVC1"))
++           fourcc = V4L2_PIX_FMT_VC1_ANNEX_L;
++    }
++
+   } else if (g_str_equal (mimetype, "video/x-fwht")) {
+     fourcc = V4L2_PIX_FMT_FWHT;
+   } else if (g_str_equal (mimetype, "video/x-h263")) {
+     fourcc = V4L2_PIX_FMT_H263;
++  } else if (g_str_equal (mimetype, "video/x-xvid")) {
++    fourcc = V4L2_PIX_FMT_XVID;
+   } else if (g_str_equal (mimetype, "video/x-h264")) {
+     const gchar *stream_format =
+         gst_structure_get_string (structure, "stream-format");
+@@ -1906,6 +1984,20 @@ gst_v4l2_object_get_caps_info (GstV4l2Object * v4l2object, GstCaps * caps,
+       fourcc = V4L2_PIX_FMT_H264;
+   } else if (g_str_equal (mimetype, "video/x-h265")) {
+     fourcc = V4L2_PIX_FMT_HEVC;
++  } else if (g_str_equal (mimetype, "video/x-pn-realvideo")) {
++    gint version;
++    if (gst_structure_get_int (structure, "version", &version)) {
++        switch (version) {
++            case 3:
++              fourcc = V4L2_PIX_FMT_RV30;
++              break;
++            case 4:
++              fourcc = V4L2_PIX_FMT_RV40;
++              break;
++            default:
++              break;
++         }
++      }
+   } else if (g_str_equal (mimetype, "video/x-vp8")) {
+     fourcc = V4L2_PIX_FMT_VP8;
+   } else if (g_str_equal (mimetype, "video/x-vp9")) {
+@@ -4581,7 +4673,7 @@ unsupported_format:
+  * Returns: %TRUE on success, %FALSE on failure.
+  */
+ gboolean
+-gst_v4l2_object_set_crop (GstV4l2Object * obj, struct v4l2_rect *crop_rect)
++gst_v4l2_object_set_crop (GstV4l2Object * obj, struct v4l2_rect * crop_rect)
+ {
+   struct v4l2_selection sel = { 0 };
+   struct v4l2_crop crop = { 0 };
+@@ -4704,13 +4796,14 @@ gst_v4l2_object_get_crop_rect (GstV4l2Object * obj, guint target,
+ }
+ 
+ gboolean
+-gst_v4l2_object_get_crop_bounds (GstV4l2Object * obj, struct v4l2_rect *result)
++gst_v4l2_object_get_crop_bounds (GstV4l2Object * obj, struct v4l2_rect * result)
+ {
+   return gst_v4l2_object_get_crop_rect (obj, V4L2_SEL_TGT_CROP_BOUNDS, result);
+ }
+ 
+ gboolean
+-gst_v4l2_object_get_crop_default (GstV4l2Object * obj, struct v4l2_rect *result)
++gst_v4l2_object_get_crop_default (GstV4l2Object * obj,
++    struct v4l2_rect * result)
+ {
+   return gst_v4l2_object_get_crop_rect (obj, V4L2_SEL_TGT_CROP_DEFAULT, result);
+ }
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 530fc5b..1a74010 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -1410,6 +1410,8 @@ G_STMT_START { \
+     }
+   } else if (gst_structure_has_name (s, "video/x-h263")) {
+     SET_META ("H263");
++  } else if (gst_structure_has_name (s, "video/x-xvid")) {
++    SET_META ("XVID");
+   } else if (gst_structure_has_name (s, "video/x-fwht")) {
+     SET_META ("FWHT");
+   } else if (gst_structure_has_name (s, "video/x-h264")) {
+@@ -1418,6 +1420,23 @@ G_STMT_START { \
+   } else if (gst_structure_has_name (s, "video/x-h265")) {
+     SET_META ("H265");
+     cdata->codec = gst_v4l2_h265_get_codec ();
++  } else if (gst_structure_has_name (s, "video/x-pn-realvideo")) {
++    SET_META ("RV");
++  } else if (gst_structure_has_name (s, "video/x-vp6-flash")) {
++    SET_META ("VP6");
++  } else if (gst_structure_has_name (s, "video/x-cavs")) {
++    SET_META ("AVS");
++  } else if (gst_structure_has_name (s, "video/x-flash-video")) {
++    SET_META ("SPK");
++  } else if (gst_structure_has_name (s, "video/x-divx")) {
++    gint divxversion = 0;
++    gst_structure_get_int (s, "divxversion", &divxversion);
++
++    if (divxversion == 3) {
++      SET_META ("DIV3");
++    } else {
++      SET_META ("DIVX");
++    }
+   } else if (gst_structure_has_name (s, "video/x-wmv")) {
+     SET_META ("VC1");
+   } else if (gst_structure_has_name (s, "video/x-vp8")) {
+-- 
+2.43.0
+

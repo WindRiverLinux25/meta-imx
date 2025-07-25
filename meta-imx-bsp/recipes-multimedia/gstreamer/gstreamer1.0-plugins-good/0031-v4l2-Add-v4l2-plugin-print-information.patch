@@ -1,0 +1,49 @@
+From fe19f9a113083812ae063c9ba8f70e5bb9c29a44 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 25 Mar 2021 12:27:34 +0800
+Subject: [PATCH 31/75] v4l2: Add v4l2 plugin print information
+
+Below information will be printed before v4l2 decoding and encoding.
+====== V4L2DEC: 1.18.0 build on Mar 25 2021 04:14:21. ======
+====== V4L2ENC: 1.18.0 build on Mar 25 2021 04:14:21. ======
+
+Upstream-Status: Pending
+
+(cherry picked from commit b14975f1be11be6c7106fb284f643b2e484e3b37)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2videodec.c | 3 +++
+ sys/v4l2/gstv4l2videoenc.c | 3 +++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index 0e1a1ef..7bc5c8d 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -125,6 +125,9 @@ gst_v4l2_video_dec_open (GstVideoDecoder * decoder)
+   GstV4l2Error error = GST_V4L2_ERROR_INIT;
+   GstCaps *codec_caps;
+ 
++  g_print ("\n====== V4L2DEC: %s build on %s %s. ======\n", (VERSION), __DATE__,
++      __TIME__);
++
+   GST_DEBUG_OBJECT (self, "Opening");
+ 
+   if (!gst_v4l2_object_open (self->v4l2output, &error))
+diff --git a/sys/v4l2/gstv4l2videoenc.c b/sys/v4l2/gstv4l2videoenc.c
+index 9df7804..0654ca1 100644
+--- a/sys/v4l2/gstv4l2videoenc.c
++++ b/sys/v4l2/gstv4l2videoenc.c
+@@ -113,6 +113,9 @@ gst_v4l2_video_enc_open (GstVideoEncoder * encoder)
+   GstV4l2Error error = GST_V4L2_ERROR_INIT;
+   GstCaps *tmp_caps, *codec_caps;
+ 
++  g_print ("\n====== V4L2ENC: %s build on %s %s. ======\n", (VERSION), __DATE__,
++	__TIME__);
++
+   GST_DEBUG_OBJECT (self, "Opening");
+ 
+   if (!gst_v4l2_object_open (self->v4l2output, &error))
+-- 
+2.43.0
+

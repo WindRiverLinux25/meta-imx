@@ -1,0 +1,71 @@
+From 1f447ff7524e6925a3cb0bdb35768eea8536f3fa Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@nxp.com>
+Date: Wed, 11 Jul 2018 16:24:07 +0800
+Subject: [PATCH 06/75] pulseaudio: Add print for pulsesink / pulsesrc
+
+- not set NOAUTOSPAWN flag in pulsesink
+- Add print to notify current sink / source device
+
+Upstream-Status: Pending
+
+Signed-off-by: Lyon Wang <lyon.wang@nxp.com>
+(cherry picked from commit 1ad050a56e9523fde28c06dd37a66cdfa1526f11)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/pulse/pulsesink.c | 10 +++++++---
+ ext/pulse/pulsesrc.c  |  2 ++
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+ mode change 100644 => 100755 ext/pulse/pulsesink.c
+ mode change 100644 => 100755 ext/pulse/pulsesrc.c
+
+diff --git a/ext/pulse/pulsesink.c b/ext/pulse/pulsesink.c
+old mode 100644
+new mode 100755
+index 4d00752..5fea927
+--- a/ext/pulse/pulsesink.c
++++ b/ext/pulse/pulsesink.c
+@@ -546,12 +546,14 @@ gst_pulseringbuffer_open_device (GstAudioRingBuffer * buf)
+     pa_context_set_subscribe_callback (pctx->context,
+         gst_pulsering_context_subscribe_cb, pctx);
+ 
+-    /* try to connect to the server and wait for completion, we don't want to
+-     * autospawn a daemon */
++    /* try to connect to the server and wait for completion, we want to
++     * make pulsesink as default audiosink, so here not set NOAUTOSPAWN flag  */
+     GST_LOG_OBJECT (psink, "connect to server %s",
+         GST_STR_NULL (psink->server));
++    /* if (pa_context_connect (pctx->context, psink->server,
++            PA_CONTEXT_NOAUTOSPAWN, NULL) < 0) */
+     if (pa_context_connect (pctx->context, psink->server,
+-            PA_CONTEXT_NOAUTOSPAWN, NULL) < 0)
++            PA_CONTEXT_NOFLAGS, NULL) < 0)
+       goto connect_failed;
+   } else {
+     GST_INFO_OBJECT (psink,
+@@ -1017,6 +1019,8 @@ gst_pulseringbuffer_acquire (GstAudioRingBuffer * buf,
+   g_free (psink->device);
+   psink->device = g_strdup (pa_stream_get_device_name (pbuf->stream));
+ 
++  g_print ("\n===!!! Current pulsesink device is %s !!!===\n\n", psink->device);
++
+ #ifndef GST_DISABLE_GST_DEBUG
+   pa_format_info_snprint (print_buf, sizeof (print_buf),
+       pa_stream_get_format_info (pbuf->stream));
+diff --git a/ext/pulse/pulsesrc.c b/ext/pulse/pulsesrc.c
+old mode 100644
+new mode 100755
+index 41252bd..3d91880
+--- a/ext/pulse/pulsesrc.c
++++ b/ext/pulse/pulsesrc.c
+@@ -1091,6 +1091,8 @@ gst_pulsesrc_read (GstAudioSrc * asrc, gpointer data, guint length,
+     g_object_notify (G_OBJECT (pulsesrc), "volume");
+     g_object_notify (G_OBJECT (pulsesrc), "mute");
+     g_object_notify (G_OBJECT (pulsesrc), "current-device");
++    g_print ("\n=== !!! Current pulsesrc device is %s !!!===\n",
++      gst_pulsesrc_get_current_device (pulsesrc));
+   }
+ 
+   pa_threaded_mainloop_lock (pulsesrc->mainloop);
+-- 
+2.43.0
+

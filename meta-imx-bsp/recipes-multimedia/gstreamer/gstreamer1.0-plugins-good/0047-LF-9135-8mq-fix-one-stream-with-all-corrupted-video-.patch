@@ -1,0 +1,114 @@
+From 0f29bd357717b3eba2dfbe515d643931178889fd Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Wed, 26 Jul 2023 17:21:36 +0800
+Subject: [PATCH 47/75] LF-9135 [8mq] fix one stream with all corrupted video
+ frames cannot play
+
+When there are over 50 continuous video frames that cannot be
+decoded from start or after seek, send gap event to finish preroll.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/v4l2/gstv4l2allocator.c |  7 +++++++
+ sys/v4l2/gstv4l2allocator.h |  2 ++
+ sys/v4l2/gstv4l2object.c    |  2 ++
+ sys/v4l2/gstv4l2object.h    |  2 ++
+ sys/v4l2/gstv4l2videodec.c  | 15 +++++++++++++++
+ 5 files changed, 28 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2allocator.c b/sys/v4l2/gstv4l2allocator.c
+index ffa5dc8..73da324 100644
+--- a/sys/v4l2/gstv4l2allocator.c
++++ b/sys/v4l2/gstv4l2allocator.c
+@@ -1434,6 +1434,13 @@ gst_v4l2_allocator_dqbuf (GstV4l2Allocator * allocator,
+   /* And update memory size */
+   if (V4L2_TYPE_IS_OUTPUT (obj->type)) {
+     gst_v4l2_allocator_reset_size (allocator, group);
++    if (group->buffer.flags & V4L2_BUF_FLAG_ERROR) {    //output buffer cannot be decoded
++      if (!obj->frame_decoded)
++        obj->err_cnt++;
++    } else {
++      obj->err_cnt = 0;
++      obj->frame_decoded = TRUE;
++    }
+   } else {
+     /* for capture, simply read the size */
+     for (i = 0; i < group->n_mem; i++) {
+diff --git a/sys/v4l2/gstv4l2allocator.h b/sys/v4l2/gstv4l2allocator.h
+index 7977d66..11e9a79 100644
+--- a/sys/v4l2/gstv4l2allocator.h
++++ b/sys/v4l2/gstv4l2allocator.h
+@@ -48,6 +48,8 @@ G_BEGIN_DECLS
+ 
+ #define GST_V4L2_MEMORY_QUARK gst_v4l2_memory_quark ()
+ 
++#define MAX_OUTPUT_ERROR_COUNT 50
++
+ typedef struct _GstV4l2Allocator GstV4l2Allocator;
+ typedef struct _GstV4l2AllocatorClass GstV4l2AllocatorClass;
+ typedef struct _GstV4l2MemoryGroup GstV4l2MemoryGroup;
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index d466513..9ac7043 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -569,6 +569,8 @@ gst_v4l2_object_new (GstElement * element,
+ 
+   v4l2object->drm_modifier = 0;
+   v4l2object->is_g2 = FALSE;
++  v4l2object->frame_decoded = FALSE;
++  v4l2object->err_cnt = 0;
+ 
+   v4l2object->keep_aspect = TRUE;
+ 
+diff --git a/sys/v4l2/gstv4l2object.h b/sys/v4l2/gstv4l2object.h
+index 85e591a..eaa79c4 100644
+--- a/sys/v4l2/gstv4l2object.h
++++ b/sys/v4l2/gstv4l2object.h
+@@ -156,6 +156,8 @@ struct _GstV4l2Object {
+   gboolean has_alpha_component;
+   guint64 drm_modifier;
+   gboolean is_g2;
++  gboolean frame_decoded;
++  guint32 err_cnt;
+ 
+   /* only used if the device supports MPLANE
+    * nb planes is meaning of v4l2 planes
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index dda6279..b44cbd9 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -358,6 +358,8 @@ gst_v4l2_video_dec_flush (GstVideoDecoder * decoder)
+     return TRUE;
+ 
+   self->output_flow = GST_FLOW_OK;
++  self->v4l2output->frame_decoded = FALSE;
++  self->v4l2output->err_cnt = 0;
+ 
+   gst_v4l2_object_unlock_stop (self->v4l2output);
+   gst_v4l2_object_unlock_stop (self->v4l2capture);
+@@ -1158,6 +1160,19 @@ gst_v4l2_video_dec_handle_frame (GstVideoDecoder * decoder,
+         &frame->input_buffer, &frame->system_frame_number);
+     GST_VIDEO_DECODER_STREAM_LOCK (decoder);
+ 
++    if (self->v4l2output->err_cnt > MAX_OUTPUT_ERROR_COUNT) {
++      if (!self->v4l2output->frame_decoded) {
++        self->v4l2output->frame_decoded = TRUE;
++
++        /* If there are over 50 continuous frames that cannot be decoded from start
++         * or after seek, send gap event to finish preroll */
++        gst_pad_push_event (decoder->srcpad, gst_event_new_gap (0,
++                GST_CLOCK_TIME_NONE));
++      }
++      ret = GST_FLOW_EOS;
++      goto drop;
++    }
++
+     if (ret == GST_FLOW_FLUSHING) {
+       if (gst_pad_get_task_state (GST_VIDEO_DECODER_SRC_PAD (self)) !=
+           GST_TASK_STARTED)
+-- 
+2.43.0
+
