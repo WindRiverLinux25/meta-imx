@@ -1,0 +1,402 @@
+From d57261f65eabe7d893f9148006298dc7d5aa69b0 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 9 Jul 2019 15:31:36 +0800
+Subject: [PATCH 40/68] MMFMWK-8468 waylandsink: implement wayland
+ linux-explicit-synchronization protocol
+
+add implementation of linux-explicit-synchronization protocol in waylandsink
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/merge_requests/440
+
+(cherry picked from commit f8489b517e57cd85a7546b596bda784f6da183a7)
+This commit also includes commit 7a6909acc8634cddd2dee78ddfe38befec1f1e37
+MMFMWK-9268 wlbuffer: destroy buffer_release object if needed
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlbuffer.c  |  56 ++++++++++++++-
+ gst-libs/gst/wayland/gstwlbuffer.h  |  15 +++++
+ gst-libs/gst/wayland/gstwldisplay.c |  19 ++++++
+ gst-libs/gst/wayland/gstwldisplay.h |   3 +
+ gst-libs/gst/wayland/gstwlwindow.c  | 101 ++++++++++++++++++++++++++++
+ gst-libs/gst/wayland/meson.build    |   1 +
+ 6 files changed, 194 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlbuffer.c b/gst-libs/gst/wayland/gstwlbuffer.c
+index 684fae9..4caa991 100644
+--- a/gst-libs/gst/wayland/gstwlbuffer.c
++++ b/gst-libs/gst/wayland/gstwlbuffer.c
+@@ -82,6 +82,8 @@
+ 
+ #include "gstwlbuffer.h"
+ 
++#include "linux-explicit-synchronization-unstable-v1-client-protocol.h"
++
+ #define GST_CAT_DEFAULT gst_wl_buffer_debug
+ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
+ 
+@@ -93,6 +95,8 @@ typedef struct _GstWlBufferPrivate
+ 
+   GstWlDisplay *display;
+ 
++  struct zwp_linux_buffer_release_v1 *buffer_release;
++
+   gboolean used_by_compositor;
+ } GstWlBufferPrivate;
+ 
+@@ -189,6 +193,7 @@ gst_buffer_add_wl_buffer (GstBuffer * gstbuffer, struct wl_buffer *wlbuffer,
+ {
+   GstWlBuffer *self;
+   GstWlBufferPrivate *priv;
++  struct zwp_linux_explicit_synchronization_v1 *explicit_sync;
+ 
+   self = g_object_new (GST_TYPE_WL_BUFFER, NULL);
+   priv = gst_wl_buffer_get_instance_private (self);
+@@ -199,7 +204,10 @@ gst_buffer_add_wl_buffer (GstBuffer * gstbuffer, struct wl_buffer *wlbuffer,
+ 
+   gst_wl_display_register_buffer (priv->display, priv->gstmem, self);
+ 
+-  wl_buffer_add_listener (priv->wlbuffer, &buffer_listener, self);
++  explicit_sync = gst_wl_display_get_explicit_sync (display);
++  if (!explicit_sync) {
++    wl_buffer_add_listener (priv->wlbuffer, &buffer_listener, self);
++  }
+ 
+   gst_mini_object_weak_ref (GST_MINI_OBJECT (priv->gstmem),
+       (GstMiniObjectNotify) gstmemory_disposed, self);
+@@ -261,6 +269,11 @@ gst_wl_buffer_force_release_and_unref (GstBuffer * buf, GstWlBuffer * self)
+   priv->display = NULL;
+   priv->current_gstbuffer = NULL;
+ 
++  /* destroy buffer_release object attacted before wl queue release */
++  if (priv->buffer_release) {
++    zwp_linux_buffer_release_v1_destroy (priv->buffer_release);
++  }
++
+   /* remove the reference that the caller (GstWlDisplay) owns */
+   g_object_unref (self);
+ }
+@@ -306,3 +319,44 @@ gst_wl_buffer_get_display (GstWlBuffer * self)
+ 
+   return priv->display;
+ }
++
++GstBuffer *
++gst_wl_buffer_get_current_gstbuffer (GstWlBuffer * self)
++{
++  GstWlBufferPrivate *priv = gst_wl_buffer_get_instance_private (self);
++
++  return priv->current_gstbuffer;
++}
++
++struct zwp_linux_buffer_release_v1 *
++gst_wl_buffer_get_buffer_release (GstWlBuffer * self)
++{
++  GstWlBufferPrivate *priv = gst_wl_buffer_get_instance_private (self);
++
++  return priv->buffer_release;
++}
++
++gboolean
++gst_wl_buffer_get_used_by_compositor (GstWlBuffer * self)
++{
++  GstWlBufferPrivate *priv = gst_wl_buffer_get_instance_private (self);
++
++  return priv->used_by_compositor;
++}
++
++void
++gst_wl_buffer_set_buffer_release (GstWlBuffer * self,
++    struct zwp_linux_buffer_release_v1 * buffer_release)
++{
++  GstWlBufferPrivate *priv = gst_wl_buffer_get_instance_private (self);
++
++  priv->buffer_release = buffer_release;
++}
++
++void
++gst_wl_buffer_set_used_by_compositor (GstWlBuffer * self, gboolean used_by_compositor)
++{
++  GstWlBufferPrivate *priv = gst_wl_buffer_get_instance_private (self);
++
++  priv->used_by_compositor = used_by_compositor;
++}
+diff --git a/gst-libs/gst/wayland/gstwlbuffer.h b/gst-libs/gst/wayland/gstwlbuffer.h
+index 5a0a6e6..581923b 100644
+--- a/gst-libs/gst/wayland/gstwlbuffer.h
++++ b/gst-libs/gst/wayland/gstwlbuffer.h
+@@ -56,4 +56,19 @@ void gst_wl_buffer_unref_buffer(GstWlBuffer * self);
+ GST_WL_API
+ GstWlDisplay *gst_wl_buffer_get_display (GstWlBuffer * self);
+ 
++GST_WL_API
++GstBuffer *gst_wl_buffer_get_current_gstbuffer (GstWlBuffer * self);
++
++GST_WL_API
++struct zwp_linux_buffer_release_v1 *gst_wl_buffer_get_buffer_release (GstWlBuffer * self);
++
++GST_WL_API
++gboolean gst_wl_buffer_get_used_by_compositor (GstWlBuffer * self);
++
++GST_WL_API
++void gst_wl_buffer_set_buffer_release (GstWlBuffer * self, struct zwp_linux_buffer_release_v1 * buffer_release);
++
++GST_WL_API
++void gst_wl_buffer_set_used_by_compositor (GstWlBuffer * self, gboolean used_by_compositor);
++
+ G_END_DECLS
+diff --git a/gst-libs/gst/wayland/gstwldisplay.c b/gst-libs/gst/wayland/gstwldisplay.c
+index 7024cbf..6000409 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.c
++++ b/gst-libs/gst/wayland/gstwldisplay.c
+@@ -31,6 +31,7 @@
+ #include "xdg-shell-client-protocol.h"
+ #include "alpha-compositing-unstable-v1-client-protocol.h"
+ #include "hdr10-metadata-unstable-v1-client-protocol.h"
++#include "linux-explicit-synchronization-unstable-v1-client-protocol.h"
+ 
+ #include <errno.h>
+ #include <drm_fourcc.h>
+@@ -61,6 +62,8 @@ typedef struct _GstWlDisplayPrivate
+   struct zwp_linux_dmabuf_v1 *dmabuf;
+   struct zwp_alpha_compositing_v1 *alpha_compositing;
+   struct zwp_hdr10_metadata_v1 *hdr10_metadata;
++  struct zwp_linux_explicit_synchronization_v1 *explicit_sync;
++
+   GArray *shm_formats;
+   GArray *dmabuf_formats;
+   GArray *dmabuf_modifiers;
+@@ -186,6 +189,9 @@ gst_wl_display_finalize (GObject * gobject)
+   if (priv->hdr10_metadata)
+     zwp_hdr10_metadata_v1_destroy (priv->hdr10_metadata);
+ 
++  if (priv->explicit_sync)
++    zwp_linux_explicit_synchronization_v1_destroy (priv->explicit_sync);
++
+   if (priv->registry)
+     wl_registry_destroy (priv->registry);
+ 
+@@ -428,6 +434,11 @@ registry_handle_global (void *data, struct wl_registry *registry,
+   } else if (g_strcmp0 (interface, "wl_shm") == 0) {
+     priv->shm = wl_registry_bind (registry, id, &wl_shm_interface, 1);
+     wl_shm_add_listener (priv->shm, &shm_listener, self);
++  } else if (g_strcmp0 (interface,
++          "zwp_linux_explicit_synchronization_v1") == 0) {
++    priv->explicit_sync =
++        wl_registry_bind (registry, id,
++        &zwp_linux_explicit_synchronization_v1_interface, 1);
+   } else if (g_strcmp0 (interface, "wp_viewporter") == 0) {
+     priv->viewporter =
+         wl_registry_bind (registry, id, &wp_viewporter_interface, 1);
+@@ -795,6 +806,14 @@ gst_wl_display_get_hdr10_metadata (GstWlDisplay * self)
+   return priv->hdr10_metadata;
+ }
+ 
++struct zwp_linux_explicit_synchronization_v1 *
++gst_wl_display_get_explicit_sync (GstWlDisplay * self)
++{
++  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
++
++  return priv->explicit_sync;
++}
++
+ gint
+ gst_wl_display_get_width (GstWlDisplay * self)
+ {
+diff --git a/gst-libs/gst/wayland/gstwldisplay.h b/gst-libs/gst/wayland/gstwldisplay.h
+index 6c16405..1a0592c 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.h
++++ b/gst-libs/gst/wayland/gstwldisplay.h
+@@ -106,6 +106,9 @@ struct wl_touch *gst_wl_display_get_touch (GstWlDisplay * self);
+ GST_WL_API
+ struct zwp_hdr10_metadata_v1 *gst_wl_display_get_hdr10_metadata (GstWlDisplay * self);
+ 
++GST_WL_API
++struct zwp_linux_explicit_synchronization_v1 *gst_wl_display_get_explicit_sync (GstWlDisplay * self);
++
+ GST_WL_API
+ gint gst_wl_display_get_width (GstWlDisplay * self);
+ 
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index b281549..2ef7598 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -25,6 +25,7 @@
+ #endif
+ 
+ #include <linux/input.h>
++#include <unistd.h>
+ 
+ #include "gstwlwindow.h"
+ #include "gstwlutils.h"
+@@ -35,6 +36,7 @@
+ #include "viewporter-client-protocol.h"
+ #include "xdg-shell-client-protocol.h"
+ #include "alpha-compositing-unstable-v1-client-protocol.h"
++#include "linux-explicit-synchronization-unstable-v1-client-protocol.h"
+ 
+ #define GST_CAT_DEFAULT gst_wl_window_debug
+ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
+@@ -56,6 +58,7 @@ typedef struct _GstWlWindowPrivate
+   struct wp_viewport *video_viewport;
+   struct xdg_surface *xdg_surface;
+   struct xdg_toplevel *xdg_toplevel;
++  struct zwp_linux_surface_synchronization_v1 *surface_sync;
+   gboolean configured;
+   GCond configure_cond;
+   GMutex configure_mutex;
+@@ -290,6 +293,79 @@ static const struct xdg_surface_listener xdg_surface_listener = {
+   handle_xdg_surface_configure,
+ };
+ 
++static gboolean
++gst_wl_poll_wait_fence (int32_t fence)
++{
++  GstPollFD pollfd = GST_POLL_FD_INIT;
++  GstPoll *fence_poll = gst_poll_new (TRUE);
++
++  pollfd.fd = fence;
++  gst_poll_add_fd (fence_poll, &pollfd);
++  gst_poll_fd_ctl_read (fence_poll, &pollfd, TRUE);
++  gst_poll_fd_ctl_write (fence_poll, &pollfd, TRUE);
++
++  if (gst_poll_wait (fence_poll, GST_CLOCK_TIME_NONE) < 0) {
++    GST_ERROR ("wait on fence failed, errno %d", errno);
++    gst_poll_free (fence_poll);
++    return FALSE;
++  }
++
++  GST_DEBUG ("wait on fence %d done", fence);
++  gst_poll_free (fence_poll);
++
++  return TRUE;
++}
++
++static void
++buffer_fenced_release (void *data,
++    struct zwp_linux_buffer_release_v1 *release, int32_t fence)
++{
++  GstWlBuffer *buffer = data;
++  GstBuffer *current_gstbuffer = gst_wl_buffer_get_current_gstbuffer (buffer);
++
++  g_assert (release == gst_wl_buffer_get_buffer_release (buffer));
++
++  gst_wl_buffer_set_used_by_compositor (buffer, FALSE);
++  zwp_linux_buffer_release_v1_destroy (gst_wl_buffer_get_buffer_release (buffer));
++  gst_wl_buffer_set_buffer_release (buffer, NULL);
++  GST_LOG ("wl_buffer::fenced_release %d (GstBuffer: %p)",
++      fence, current_gstbuffer);
++
++  if (fence > 0) {
++    gst_wl_poll_wait_fence (fence);
++    close (fence);
++    if (buffer)
++      gst_buffer_unref (current_gstbuffer);
++  }
++
++}
++
++static void
++buffer_immediate_release (void *data,
++    struct zwp_linux_buffer_release_v1 *release)
++{
++  GstWlBuffer *buffer = data;
++  GstBuffer *current_gstbuffer = gst_wl_buffer_get_current_gstbuffer (buffer);
++
++  g_assert (release == gst_wl_buffer_get_buffer_release (buffer));
++
++  gst_wl_buffer_set_used_by_compositor (buffer, FALSE);
++  zwp_linux_buffer_release_v1_destroy (gst_wl_buffer_get_buffer_release (buffer));
++  gst_wl_buffer_set_buffer_release (buffer, NULL);
++  GST_LOG ("wl_buffer::immediate_release (GstBuffer: %p)",
++      current_gstbuffer);
++
++  /* unref should be last, because it may end up destroying the GstWlBuffer */
++  gst_buffer_unref (current_gstbuffer);
++}
++
++static const struct zwp_linux_buffer_release_v1_listener buffer_release_listener
++    = {
++  buffer_fenced_release,
++  buffer_immediate_release,
++};
++
++
+ static void
+ gst_wl_window_class_init (GstWlWindowClass * klass)
+ {
+@@ -344,6 +420,9 @@ gst_wl_window_finalize (GObject * gobject)
+   if (priv->video_viewport)
+     wp_viewport_destroy (priv->video_viewport);
+ 
++  if (priv->surface_sync)
++    zwp_linux_surface_synchronization_v1_destroy (priv->surface_sync);
++
+   wl_proxy_wrapper_destroy (priv->video_surface_wrapper);
+ 
+   if (priv->blend_func)
+@@ -376,6 +455,7 @@ gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
+   struct wl_region *region;
+   struct wp_viewporter *viewporter;
+   struct zwp_alpha_compositing_v1 *alpha_compositing;
++  struct zwp_linux_explicit_synchronization_v1 *explicit_sync;
+   gint width, height;
+ 
+   self = g_object_new (GST_TYPE_WL_WINDOW, NULL);
+@@ -417,6 +497,12 @@ gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
+         zwp_alpha_compositing_v1_get_blending (alpha_compositing,
+         priv->area_surface);
+ 
++  explicit_sync = gst_wl_display_get_explicit_sync (display);
++  if (explicit_sync)
++    priv->surface_sync =
++        zwp_linux_explicit_synchronization_v1_get_synchronization(explicit_sync,
++        priv->video_surface_wrapper);
++
+   /* never accept input events on the video surface */
+   region = wl_compositor_create_region (compositor);
+   wl_surface_set_input_region (priv->video_surface, region);
+@@ -777,6 +863,9 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
+   GstVideoInfo *info = priv->next_video_info;
+   struct wl_callback *callback;
++  GstBuffer *current_gstbuffer;
++  struct zwp_linux_buffer_release_v1 *buffer_release;
++  gboolean used_by_compositor;
+ 
+   if (G_UNLIKELY (info)) {
+     priv->scaled_width =
+@@ -789,6 +878,18 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+     gst_wl_window_set_opaque (self, info);
+   }
+ 
++  current_gstbuffer = gst_wl_buffer_get_current_gstbuffer (buffer);
++  used_by_compositor = gst_wl_buffer_get_used_by_compositor (buffer);
++  if (buffer && !used_by_compositor && priv->surface_sync) {
++    GST_DEBUG ("use explicit sync create buffer release (GstBuffer: %p)",
++        current_gstbuffer);
++    gst_wl_buffer_set_buffer_release (buffer,
++        zwp_linux_surface_synchronization_v1_get_release (priv->surface_sync));
++    buffer_release = gst_wl_buffer_get_buffer_release (buffer);
++    zwp_linux_buffer_release_v1_add_listener (buffer_release,
++        &buffer_release_listener, buffer);
++  }
++
+   if (G_LIKELY (buffer)) {
+     callback = wl_surface_frame (priv->video_surface_wrapper);
+     priv->frame_callback = callback;
+diff --git a/gst-libs/gst/wayland/meson.build b/gst-libs/gst/wayland/meson.build
+index 912d26e..b0f12ee 100644
+--- a/gst-libs/gst/wayland/meson.build
++++ b/gst-libs/gst/wayland/meson.build
+@@ -45,6 +45,7 @@ if use_wayland
+     ['single-pixel-buffer', 'staging', 'v1' ],
+     ['alpha-compositing', 'unstable', 'v1', ],
+     ['hdr10-metadata', 'unstable', 'v1', ],
++    ['linux-explicit-synchronization', 'unstable', 'v1'],
+   ]
+   protocols_files = []
+ 
+-- 
+2.43.0
+

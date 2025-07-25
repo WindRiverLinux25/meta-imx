@@ -1,0 +1,47 @@
+From 66de41b480d1211ff30f1efcb5db907cff633ed0 Mon Sep 17 00:00:00 2001
+From: Chao Guo <chao.guo@nxp.com>
+Date: Fri, 31 May 2024 11:26:32 +0900
+Subject: [PATCH 57/68] LF-12564 wlwindow: fix the issue of video hang after
+ resizing by mouse
+
+When resizing video by mouse, there are two threads (render/display thread)
+that may wait for each other to release the mutex (render_lock/sync_mutex)
+they hold, which will cause the video pipeline to hang.
+
+Due to the update of gstreamer, the 'surface_commit' in the render thread
+is migrated to the display thread, so delete the render_lock in the display
+thread, so that the render thread does not need to wait for the display thread.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chao Guo <chao.guo@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlwindow.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index b18259d..8d0dd2e 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -252,7 +252,6 @@ handle_xdg_toplevel_configure (void *data, struct xdg_toplevel *xdg_toplevel,
+     int32_t width, int32_t height, struct wl_array *states)
+ {
+   GstWlWindow *self = data;
+-  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
+   const uint32_t *state;
+ 
+   GST_DEBUG ("XDG toplevel got a \"configure\" event, [ %d, %d ].",
+@@ -271,9 +270,7 @@ handle_xdg_toplevel_configure (void *data, struct xdg_toplevel *xdg_toplevel,
+   if (width <= 2 * RESIZE_MARGIN || height <= 2 * RESIZE_MARGIN)
+     return;
+ 
+-  g_mutex_lock (priv->render_lock);
+   gst_wl_window_set_render_rectangle (self, 0, 0, width, height);
+-  g_mutex_unlock (priv->render_lock);
+ }
+ 
+ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
+-- 
+2.43.0
+

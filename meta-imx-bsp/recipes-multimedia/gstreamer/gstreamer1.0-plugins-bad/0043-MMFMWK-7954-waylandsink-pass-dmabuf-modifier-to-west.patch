@@ -1,0 +1,92 @@
+From bcc2c06c391619d057fbfbb815b5ca033c53e696 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 23 Apr 2018 12:38:38 +0800
+Subject: [PATCH 43/68] MMFMWK-7954 waylandsink: pass dmabuf modifier to weston
+
+Upstream-Status: Pending
+
+(cherry picked from commit 78d9555078c83b1b09bc603b9bbd05c9313d2611)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c            |  7 +++++++
+ gst-libs/gst/wayland/gstwllinuxdmabuf.c | 12 ++++++++++--
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index 0676d70..8e46568 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -51,6 +51,9 @@
+ #include <gst/video/videooverlay.h>
+ #include <linux/version.h>
+ 
++#include <xf86drm.h>
++#include <xf86drmMode.h>
++
+ #include "hdr10-metadata-unstable-v1-client-protocol.h"
+ 
+ /* signals */
+@@ -876,6 +879,7 @@ gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
+   GstBufferPool *pool = NULL;
+   gboolean need_pool;
+   GstAllocator *alloc;
++  guint64 drm_modifier;
+   GstVideoInfoDmaDrm drm_info;
+   GstVideoInfo vinfo;
+   guint size;
+@@ -896,6 +900,9 @@ gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
+     size = vinfo.size;
+   }
+ 
++  drm_modifier = DRM_FORMAT_MOD_AMPHION_TILED;
++  gst_query_add_allocation_dmabuf_meta (query, drm_modifier);
++
+   if (need_pool) {
+     GstStructure *config;
+     pool = gst_wl_video_buffer_pool_new ();
+diff --git a/gst-libs/gst/wayland/gstwllinuxdmabuf.c b/gst-libs/gst/wayland/gstwllinuxdmabuf.c
+index ffa2605..dc9af10 100644
+--- a/gst-libs/gst/wayland/gstwllinuxdmabuf.c
++++ b/gst-libs/gst/wayland/gstwllinuxdmabuf.c
+@@ -24,6 +24,8 @@
+ #include <config.h>
+ #endif
+ 
++#include <gst/allocators/gstdmabufmeta.h>
++
+ #include "gstwllinuxdmabuf.h"
+ 
+ #include "linux-dmabuf-unstable-v1-client-protocol.h"
+@@ -87,7 +89,7 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
+ {
+   GstMemory *mem;
+   guint fourcc;
+-  guint64 modifier;
++  guint64 modifier = 0;
+   guint i, width = 0, height = 0;
+   GstVideoInfo info;
+   const gsize *offsets = NULL;
+@@ -97,13 +99,19 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
+   struct zwp_linux_buffer_params_v1 *params;
+   gint64 timeout;
+   ConstructBufferData data;
++  GstDmabufMeta *dmabuf_meta;
+ 
+   g_return_val_if_fail (gst_wl_display_check_format_for_dmabuf (display,
+           drm_info), NULL);
+ 
+   mem = gst_buffer_peek_memory (buf, 0);
+   fourcc = drm_info->drm_fourcc;
+-  modifier = drm_info->drm_modifier;
++
++  dmabuf_meta = gst_buffer_get_dmabuf_meta (buf);
++  if (dmabuf_meta)
++    modifier = dmabuf_meta->drm_modifier;
++  else
++    modifier = drm_info->drm_modifier;
+ 
+   g_cond_init (&data.cond);
+   g_mutex_init (&data.lock);
+-- 
+2.43.0
+

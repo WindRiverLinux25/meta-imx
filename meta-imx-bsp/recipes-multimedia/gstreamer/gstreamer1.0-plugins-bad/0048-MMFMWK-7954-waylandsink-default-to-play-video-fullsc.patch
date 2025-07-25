@@ -1,0 +1,201 @@
+From ef85d63985b41df9e4945d9256b8f7a49f5a6798 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 23 Sep 2020 19:39:54 +0800
+Subject: [PATCH 48/68] MMFMWK-7954 waylandsink: default to play video
+ fullscreen
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlutils.c  | 15 +++++---
+ gst-libs/gst/wayland/gstwlutils.h  |  8 +++-
+ gst-libs/gst/wayland/gstwlwindow.c | 62 +++++++++++++++++++++++++++---
+ gst-libs/gst/wayland/gstwlwindow.h | 12 ++++++
+ 4 files changed, 85 insertions(+), 12 deletions(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlutils.c b/gst-libs/gst/wayland/gstwlutils.c
+index 7c556a8..63e3c6f 100644
+--- a/gst-libs/gst/wayland/gstwlutils.c
++++ b/gst-libs/gst/wayland/gstwlutils.c
+@@ -38,13 +38,13 @@
+ #define WESTON_INI "/etc/xdg/weston/weston.ini"
+ 
+ gboolean
+-gst_wl_init_buffer_scale (gint display_width, gint display_height,
+-    guint * scale)
++gst_wl_init_surface_state (GstWlDisplay * display, GstWlWindow * self)
+ {
+   gchar path[] = WESTON_INI;
+   gchar line[512], *p, *section = NULL, *size = NULL;
+   gint fd, n, i;
+   gint desktop_width, desktop_height;
++  gint display_width, display_height;
+   gboolean found_config = FALSE;
+   gboolean ret = TRUE;
+   struct stat filestat;
+@@ -124,11 +124,16 @@ gst_wl_init_buffer_scale (gint display_width, gint display_height,
+   }
+ 
+   /* FIXME: only support buffer scale 2 and 1 */
++  display_width = gst_wl_display_get_width (display);
++  display_height = gst_wl_display_get_height (display);
+   if (display_width > 0 && display_height > 0) {
+-    *scale = display_width / desktop_width;
+-    if (*scale != 1 && *scale != 2) {
+-      *scale = 1;
++    gst_wl_window_set_scale (self, display_width / desktop_width);
++    if (gst_wl_window_get_scale (self) != 1 && gst_wl_window_get_scale (self) != 2) {
++      ret = FALSE;
++      goto out;
+     }
++    gst_wl_window_set_fullscreen_width (self, desktop_width);
++    gst_wl_window_set_fullscreen_height (self, desktop_height - PANEL_HEIGH);
+   } else {
+     ret = FALSE;
+     goto out;
+diff --git a/gst-libs/gst/wayland/gstwlutils.h b/gst-libs/gst/wayland/gstwlutils.h
+index 285dcae..90c3b0e 100644
+--- a/gst-libs/gst/wayland/gstwlutils.h
++++ b/gst-libs/gst/wayland/gstwlutils.h
+@@ -23,9 +23,15 @@
+ 
+ #include <gst/gst.h>
+ 
++#include "gstwlwindow.h"
++#include "gstwldisplay.h"
++
+ G_BEGIN_DECLS
+ 
+-gboolean gst_wl_init_buffer_scale(gint display_width, gint display_height, guint * scale);
++/* FIXME: try to get from wayland server */
++#define PANEL_HEIGH 32
++
++gboolean gst_wl_init_surface_state(GstWlDisplay * display, GstWlWindow * self);
+ G_END_DECLS
+ 
+ #endif
+\ No newline at end of file
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index 68afdca..a95f947 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -100,6 +100,8 @@ typedef struct _GstWlWindowPrivate
+ 
+   /* mouse location when click */
+   gint pointer_x, pointer_y;
++  /* fullscreen window size */
++  gint fullscreen_width, fullscreen_height;
+ } GstWlWindowPrivate;
+ 
+ G_DEFINE_TYPE_WITH_CODE (GstWlWindow, gst_wl_window, G_TYPE_OBJECT,
+@@ -394,6 +396,8 @@ gst_wl_window_init (GstWlWindow * self)
+   priv->src_width = -1;
+   priv->src_height = 0;
+   priv->scale = 1;
++  priv->fullscreen_width = -1;
++  priv->fullscreen_height = -1;
+ }
+ 
+ static void
+@@ -511,8 +515,13 @@ gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
+   width = gst_wl_display_get_width (display);
+   height = gst_wl_display_get_height (display);
+ 
+-  if (!gst_wl_init_buffer_scale (width, height, &priv->scale)) {
+-    GST_WARNING ("init buffer scale fail, fallback to scale=%d", priv->scale);
++  if (!gst_wl_init_surface_state (display, self)) {
++    priv->fullscreen_width = width;
++    priv->fullscreen_height = height - PANEL_HEIGH;
++    priv->scale = 1;
++    GST_WARNING
++        ("init surface_state fail, fallback to scale=%d fullscreen (%dx%d)",
++        priv->scale, priv->fullscreen_width, priv->fullscreen_height);
+   }
+ 
+   return self;
+@@ -620,12 +629,15 @@ gst_wl_window_new_toplevel (GstWlDisplay * display, const GstVideoInfo * info,
+     if (preferred_width > 0 && preferred_height > 0) {
+       width = preferred_width;
+       height = preferred_height;
+-    } else {
++    } else if (priv->fullscreen_width <= 0) {
+       /* set the initial size to be the same as the reported video size */
+-      width = 
++      width =
+           gst_util_uint64_scale_int_round (info->width, info->par_n,
+-                                           info->par_d) / priv->scale;
+-      height = info->height / priv->scale;
++          info->par_d);
++      height = info->height;
++    } else {
++      width = priv->fullscreen_width;
++      height = priv->fullscreen_height;
+     }
+ 
+     gst_wl_window_set_render_rectangle (self, 0, 0, width, height);
+@@ -1182,3 +1194,41 @@ gst_wl_window_set_rotate_method (GstWlWindow * self,
+ 
+   gst_wl_window_update_geometry (self);
+ }
++
++void
++gst_wl_window_set_scale (GstWlWindow * self, gint scale)
++{
++  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
++
++  priv->scale = scale;
++
++  gst_wl_window_update_geometry (self);
++}
++
++guint
++gst_wl_window_get_scale (GstWlWindow * self)
++{
++  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
++
++  return priv->scale;
++}
++
++void
++gst_wl_window_set_fullscreen_width (GstWlWindow * self, gint fullscreen_width)
++{
++  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
++
++  priv->fullscreen_width = fullscreen_width;
++
++  gst_wl_window_update_geometry (self);
++}
++
++void
++gst_wl_window_set_fullscreen_height (GstWlWindow * self, gint fullscreen_height)
++{
++  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
++
++  priv->fullscreen_height = fullscreen_height;
++
++  gst_wl_window_update_geometry (self);
++}
+diff --git a/gst-libs/gst/wayland/gstwlwindow.h b/gst-libs/gst/wayland/gstwlwindow.h
+index 611853b..d3be2f5 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.h
++++ b/gst-libs/gst/wayland/gstwlwindow.h
+@@ -89,4 +89,16 @@ GST_WL_API
+ void gst_wl_window_set_rotate_method (GstWlWindow               *self,
+         GstVideoOrientationMethod  rotate_method);
+ 
++GST_WL_API
++void gst_wl_window_set_scale (GstWlWindow * self, gint scale);
++
++GST_WL_API
++guint gst_wl_window_get_scale (GstWlWindow * self);
++
++GST_WL_API
++void gst_wl_window_set_fullscreen_width (GstWlWindow * self, gint fullscreen_width);
++
++GST_WL_API
++void gst_wl_window_set_fullscreen_height (GstWlWindow * self, gint fullscreen_height);
++
+ G_END_DECLS
+-- 
+2.43.0
+

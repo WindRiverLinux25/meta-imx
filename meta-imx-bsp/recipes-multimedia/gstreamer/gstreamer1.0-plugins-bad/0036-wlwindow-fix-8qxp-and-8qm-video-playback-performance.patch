@@ -1,0 +1,37 @@
+From a6d255064f865eb8d743969e0d6825e95402ba13 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 10 Apr 2019 10:41:04 +0800
+Subject: [PATCH 36/68] wlwindow: fix 8qxp and 8qm video playback performance
+ issue
+
+Need set video surface opaque to disable below GUI refresh
+Need check if 8mq still need this change
+
+Upstream-Status: Pending
+
+Signed-off-by: Haihua Hu <jared.hu@nxp.com>
+(cherry picked from commit 68840b838c25aa1ab771b4ad884a086f23e3804f)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlwindow.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index 6b9f8e1..7defa01 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -731,8 +731,9 @@ gst_wl_window_set_opaque (GstWlWindow * self, const GstVideoInfo * info)
+   compositor = gst_wl_display_get_compositor (priv->display);
+ 
+   if (!GST_VIDEO_INFO_HAS_ALPHA (info)) {
+-    /* for platform support overlay, video should not overlap graphic */
+-    if (HAS_DCSS () || HAS_DPU ())
++    /* for platform support overlay, video should not overlap graphic
++       FIXME. Not sure whether still need this change */
++    if (HAS_DCSS ())
+       return;
+ 
+     /* Set video opaque */
+-- 
+2.43.0
+

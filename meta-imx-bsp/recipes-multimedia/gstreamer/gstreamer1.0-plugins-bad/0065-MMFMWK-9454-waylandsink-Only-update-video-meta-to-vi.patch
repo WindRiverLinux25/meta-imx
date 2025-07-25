@@ -1,0 +1,62 @@
+From e806751c935a366224fddc983a87b7e8f4199b4a Mon Sep 17 00:00:00 2001
+From: Chao Guo <chao.guo@nxp.com>
+Date: Wed, 4 Dec 2024 16:26:11 +0900
+Subject: [PATCH 65/68] MMFMWK-9454 waylandsink: Only update video meta to
+ video info when creating shm mem.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chao Guo <chao.guo@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index 1ef5247..3d2678b 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -1271,30 +1271,31 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
+   }
+ 
+ handle_shm:
+-  GstVideoInfo old_vinfo = self->video_info;
+-  GstVideoMeta *vmeta = gst_buffer_get_video_meta (buffer);
+-  if (vmeta) {
++  if (!wbuf && gst_wl_display_check_format_for_shm (self->display,
++          &self->video_info)) {
++    GstVideoInfo old_vinfo = self->video_info;
++    GstVideoMeta *vmeta = gst_buffer_get_video_meta (buffer);
++    if (vmeta) {
+       for (gint i = 0; i < vmeta->n_planes; i++) {
+         self->video_info.offset[i] = vmeta->offset[i];
+         self->video_info.stride[i] = vmeta->stride[i];
+       }
+       self->video_info.width = vmeta->width + vmeta->alignment.padding_left +
+-          vmeta->alignment.padding_right;
++           vmeta->alignment.padding_right;
+       self->video_info.height = vmeta->height + vmeta->alignment.padding_bottom +
+-          vmeta->alignment.padding_top;
++           vmeta->alignment.padding_top;
+       self->video_info.size = gst_buffer_get_size (buffer);
+-  }
++    }
+ 
+-  if (!wbuf && gst_wl_display_check_format_for_shm (self->display,
+-          &self->video_info)) {
+     if (vmeta && gst_buffer_n_memory (buffer) == 1 && gst_is_fd_memory (mem))
+       wbuf = gst_wl_shm_memory_construct_wl_buffer (mem, self->display,
+           &self->video_info);
+ 
++    self->video_info = old_vinfo;
++
+     /* If nothing worked, copy into our internal pool */
+     if (!wbuf) {
+       GstVideoFrame src, dst;
+-      self->video_info = old_vinfo;
+ 
+       /* we don't know how to create a wl_buffer directly from the provided
+        * memory, so we have to copy the data to shm memory that we know how
+-- 
+2.43.0
+

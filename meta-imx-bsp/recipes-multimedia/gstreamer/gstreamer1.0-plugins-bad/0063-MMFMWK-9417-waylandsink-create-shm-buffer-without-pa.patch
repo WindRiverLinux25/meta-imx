@@ -1,0 +1,41 @@
+From 023a98f2206e7161d59d41e4de844e1a7c3324ac Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 18 Oct 2024 14:01:40 +0800
+Subject: [PATCH 63/68] MMFMWK-9417 waylandsink: create shm buffer without
+ padding
+
+When using wrong weston.ini "use-g2d=1" instead of "use-g2d=TRUE",
+waylandsink will create internal buffer pool. In order to avoid
+video-info calculated width and padding width mismatch, no need
+to add width and height padding when creating shm buffer pool.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index 6b9b126..aac4ea8 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -737,6 +737,7 @@ gst_wayland_update_pool (GstWaylandSink * self, GstAllocator * allocator)
+   gint w = GST_VIDEO_INFO_WIDTH (&self->video_info);
+   gint h = GST_VIDEO_INFO_HEIGHT (&self->video_info);
+   GstStructure *config;
++  gboolean is_shm = GST_IS_SHM_ALLOCATOR (allocator);
+ 
+   /* Pools with outstanding buffer cannot be reconfigured, so we must use
+    * a new pool. */
+@@ -751,7 +752,7 @@ gst_wayland_update_pool (GstWaylandSink * self, GstAllocator * allocator)
+   gst_buffer_pool_config_set_params (config, self->caps, size, 2, 0);
+   gst_buffer_pool_config_set_allocator (config, allocator, NULL);
+ 
+-  if (!ISALIGNED (w, 16) || !ISALIGNED (h, 16)) {
++  if (!is_shm && (!ISALIGNED (w, 16) || !ISALIGNED (h, 16))) {
+     GstVideoAlignment alignment;
+ 
+     memset (&alignment, 0, sizeof (GstVideoAlignment));
+-- 
+2.43.0
+

@@ -1,0 +1,32 @@
+From 822c4eb9a603f780f10b5aaa39001534324051c2 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 8 Oct 2024 11:22:55 +0900
+Subject: [PATCH 61/68] LF-13498 wllinuxdmabuf: change timeout from 1s to 10s
+
+current implementation put the wl_dmabuf creation outside the
+wldisplay thread, but wldisplay thread maybe blocked by fence wait
+or something else. It easily cause timeout, so change timeout
+from 1s to 10s.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwllinuxdmabuf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/wayland/gstwllinuxdmabuf.c b/gst-libs/gst/wayland/gstwllinuxdmabuf.c
+index 1e0dc02..108d91e 100644
+--- a/gst-libs/gst/wayland/gstwllinuxdmabuf.c
++++ b/gst-libs/gst/wayland/gstwllinuxdmabuf.c
+@@ -211,7 +211,7 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
+   /* Wait for the request answer */
+   wl_display_flush (gst_wl_display_get_display (display));
+   data.wbuf = (gpointer) 0x1;
+-  timeout = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
++  timeout = g_get_monotonic_time () + 10 * G_TIME_SPAN_SECOND;
+   while (data.wbuf == (gpointer) 0x1) {
+     if (!g_cond_wait_until (&data.cond, &data.lock, timeout)) {
+       GST_ERROR_OBJECT (mem->allocator, "zwp_linux_buffer_params_v1 time out");
+-- 
+2.43.0
+

@@ -1,0 +1,30 @@
+From 8bd698a022782fa99f4890709f5800b916fdd574 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Mon, 27 Jul 2020 18:34:31 +0800
+Subject: [PATCH 13/68] tinycompresssink: reset tiny compress handle when stop.
+
+reset tiny compress handle when stop, so we can playback repeatly.
+
+Upstream-Status: Pending
+(cherry picked from commit 3b8aaa129a0a4d1bfa026f62200e726183a5d6fd)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/tinycompress/tinycompresssink.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sys/tinycompress/tinycompresssink.c b/sys/tinycompress/tinycompresssink.c
+index 788da5b..de51a58 100644
+--- a/sys/tinycompress/tinycompresssink.c
++++ b/sys/tinycompress/tinycompresssink.c
+@@ -572,6 +572,8 @@ gst_tinycompresssink_close_device (GstTinyCompressSink * csink)
+   if (csink->compress)
+     compress_close(csink->compress);
+ 
++  csink->compress = NULL;
++
+   return TRUE;
+ }
+ 
+-- 
+2.43.0
+

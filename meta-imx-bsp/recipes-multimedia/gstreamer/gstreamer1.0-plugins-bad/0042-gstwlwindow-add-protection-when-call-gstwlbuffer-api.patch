@@ -1,0 +1,50 @@
+From 9e6f07ab10556c58506b858bf578e0987f90774c Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 12 Dec 2023 00:21:28 +0900
+Subject: [PATCH 42/68] gstwlwindow: add protection when call gstwlbuffer api
+ with null wlbuffer
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlwindow.c | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index 2ef7598..68afdca 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -878,19 +878,19 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+     gst_wl_window_set_opaque (self, info);
+   }
+ 
+-  current_gstbuffer = gst_wl_buffer_get_current_gstbuffer (buffer);
+-  used_by_compositor = gst_wl_buffer_get_used_by_compositor (buffer);
+-  if (buffer && !used_by_compositor && priv->surface_sync) {
+-    GST_DEBUG ("use explicit sync create buffer release (GstBuffer: %p)",
++  if (G_LIKELY (buffer)) {
++    current_gstbuffer = gst_wl_buffer_get_current_gstbuffer (buffer);
++    used_by_compositor = gst_wl_buffer_get_used_by_compositor (buffer);
++    if (!used_by_compositor && priv->surface_sync) {
++      GST_DEBUG ("use explicit sync create buffer release (GstBuffer: %p)",
+         current_gstbuffer);
+-    gst_wl_buffer_set_buffer_release (buffer,
+-        zwp_linux_surface_synchronization_v1_get_release (priv->surface_sync));
+-    buffer_release = gst_wl_buffer_get_buffer_release (buffer);
+-    zwp_linux_buffer_release_v1_add_listener (buffer_release,
+-        &buffer_release_listener, buffer);
+-  }
++      gst_wl_buffer_set_buffer_release (buffer,
++          zwp_linux_surface_synchronization_v1_get_release (priv->surface_sync));
++      buffer_release = gst_wl_buffer_get_buffer_release (buffer);
++      zwp_linux_buffer_release_v1_add_listener (buffer_release,
++          &buffer_release_listener, buffer);
++    }
+ 
+-  if (G_LIKELY (buffer)) {
+     callback = wl_surface_frame (priv->video_surface_wrapper);
+     priv->frame_callback = callback;
+     wl_callback_add_listener (callback, &frame_callback_listener, self);
+-- 
+2.43.0
+

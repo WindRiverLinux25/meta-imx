@@ -1,0 +1,138 @@
+From 4f7bf5cadb0b885a00642403086b5c285db0cca7 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 23 Dec 2020 19:50:24 +0800
+Subject: [PATCH 20/68] dashdemux: setup streams with connection speed
+
+chose the default representation by connection speed
+insead of get lowest bandwidth representation
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/merge_requests/1904
+
+(cherry picked from commit 08279014b965a8bf267a6159d34bc1170add777d)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/dash/gstdashdemux.c |  5 +++++
+ ext/dash/gstmpdclient.c | 24 +++++++++++++++++-------
+ ext/dash/gstmpdclient.h |  1 +
+ 3 files changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/ext/dash/gstdashdemux.c b/ext/dash/gstdashdemux.c
+index 6e478f1..fbd709d 100644
+--- a/ext/dash/gstdashdemux.c
++++ b/ext/dash/gstdashdemux.c
+@@ -754,9 +754,14 @@ static gboolean
+ gst_dash_demux_setup_mpdparser_streams (GstDashDemux * demux,
+     GstMPDClient * client)
+ {
++  GstAdaptiveDemux *adaptivedemux = GST_ADAPTIVE_DEMUX_CAST (demux);
+   gboolean has_streams = FALSE;
+   GList *adapt_sets, *iter;
+ 
++  if (adaptivedemux->connection_speed) {
++    client->connection_speed = adaptivedemux->connection_speed;
++  }
++
+   adapt_sets = gst_mpd_client_get_adaptation_sets (client);
+   for (iter = adapt_sets; iter; iter = g_list_next (iter)) {
+     GstMPDAdaptationSetNode *adapt_set_node = iter->data;
+diff --git a/ext/dash/gstmpdclient.c b/ext/dash/gstmpdclient.c
+index 9be0bd0..c4a12c0 100644
+--- a/ext/dash/gstmpdclient.c
++++ b/ext/dash/gstmpdclient.c
+@@ -157,7 +157,6 @@ gst_mpd_client_get_lowest_representation (GList * Representations)
+   return lowest;
+ }
+ 
+-#if 0
+ static GstMPDRepresentationNode *
+ gst_mpdparser_get_highest_representation (GList * Representations)
+ {
+@@ -177,6 +176,7 @@ gst_mpdparser_get_representation_with_max_bandwidth (GList * Representations,
+ {
+   GList *list = NULL;
+   GstMPDRepresentationNode *representation, *best_rep = NULL;
++  gint best_bandwidth = 0;
+ 
+   if (Representations == NULL)
+     return NULL;
+@@ -186,14 +186,15 @@ gst_mpdparser_get_representation_with_max_bandwidth (GList * Representations,
+ 
+   for (list = g_list_first (Representations); list; list = g_list_next (list)) {
+     representation = (GstMPDRepresentationNode *) list->data;
+-    if (representation && representation->bandwidth <= max_bandwidth) {
++    if (representation && representation->bandwidth <= max_bandwidth
++        && representation->bandwidth > best_bandwidth) {
+       best_rep = representation;
++      best_bandwidth = representation->bandwidth;
+     }
+   }
+ 
+   return best_rep;
+ }
+-#endif
+ 
+ static GstMPDSegmentListNode *
+ gst_mpd_client_fetch_external_segment_list (GstMPDClient * client,
+@@ -454,6 +455,7 @@ gst_mpd_client_class_init (GstMPDClientClass * klass)
+ static void
+ gst_mpd_client_init (GstMPDClient * client)
+ {
++  client->connection_speed = 0;
+ }
+ 
+ GstMPDClient *
+@@ -1616,7 +1618,7 @@ gboolean
+ gst_mpd_client_setup_streaming (GstMPDClient * client,
+     GstMPDAdaptationSetNode * adapt_set)
+ {
+-  GstMPDRepresentationNode *representation;
++  GstMPDRepresentationNode *representation = NULL;
+   GList *rep_list = NULL;
+   GstActiveStream *stream;
+ 
+@@ -1632,7 +1634,8 @@ gst_mpd_client_setup_streaming (GstMPDClient * client,
+   stream->baseURL_idx = 0;
+   stream->cur_adapt_set = adapt_set;
+ 
+-  GST_DEBUG ("0. Current stream %p", stream);
++  GST_DEBUG ("0. Current stream %p connection speed %u kbps", stream,
++      client->connection_speed / 1000);
+ 
+ #if 0
+   /* fast start */
+@@ -1646,10 +1649,17 @@ gst_mpd_client_setup_streaming (GstMPDClient * client,
+     representation = gst_mpd_client_get_lowest_representation (rep_list);
+   }
+ #else
+-  /* slow start */
+-  representation = gst_mpd_client_get_lowest_representation (rep_list);
++  /* select representation based on connection-speed */
++  if (client->connection_speed)
++    representation =
++        gst_mpdparser_get_representation_with_max_bandwidth (rep_list,
++        client->connection_speed);
+ #endif
+ 
++  /* if no matched representation, then slow start */
++  if (!representation)
++    representation = gst_mpd_client_get_lowest_representation (rep_list);
++
+   if (!representation) {
+     GST_WARNING ("No valid representation in the MPD file, aborting...");
+     gst_mpdparser_free_active_stream (stream);
+diff --git a/ext/dash/gstmpdclient.h b/ext/dash/gstmpdclient.h
+index b15b5ca..0809cbf 100644
+--- a/ext/dash/gstmpdclient.h
++++ b/ext/dash/gstmpdclient.h
+@@ -42,6 +42,7 @@ struct _GstMPDClient
+   gchar *mpd_uri;                             /* manifest file URI */
+   gchar *mpd_base_uri;                        /* base URI for resolving relative URIs.
+                                                * this will be different for redirects */
++  guint connection_speed;                     /* connection speed set by player */
+ 
+   /* profiles */
+   gboolean profile_isoff_ondemand;
+-- 
+2.43.0
+

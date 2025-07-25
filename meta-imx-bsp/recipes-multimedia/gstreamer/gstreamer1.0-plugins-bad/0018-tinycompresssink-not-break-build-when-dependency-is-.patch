@@ -1,0 +1,38 @@
+From 22f7c61d884dbfb801e4bb72a9e539b8e7e3ba9e Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 20 Oct 2020 17:05:45 +0800
+Subject: [PATCH 18/68] tinycompresssink: not break build when dependency is
+ not found
+
+Upstream-Status: Pending
+
+(cherry picked from commit 166e646289c3af9d8004c6103bc67625756a4488)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/tinycompress/meson.build | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/sys/tinycompress/meson.build b/sys/tinycompress/meson.build
+index 5cc93e3..f9578df 100644
+--- a/sys/tinycompress/meson.build
++++ b/sys/tinycompress/meson.build
+@@ -9,7 +9,7 @@ if have_tinycompress
+ endif
+ 
+ if not have_tinycompress
+-  tinycompress_dep = dependency('tinycompress', required: get_option('tinycompress'),
++  tinycompress_dep = dependency('tinycompress', required: false,
+                             fallback: ['tinycompress', 'tinycompress_dep'])
+   have_tinycompress = tinycompress_dep.found()
+ endif
+@@ -25,5 +25,6 @@ if have_tinycompress
+   )
+   pkgconfig.generate(gsttinycompress, install_dir: plugins_pkgconfig_install_dir)
+ elif get_option('tinycompress').enabled()
+-  error('tinycompress plugin enabled but TinyALSA library or headers not found')
++  message('tinycompress plugin enabled but TinyALSA library or headers not found')
++  subdir_done()
+ endif
+-- 
+2.43.0
+

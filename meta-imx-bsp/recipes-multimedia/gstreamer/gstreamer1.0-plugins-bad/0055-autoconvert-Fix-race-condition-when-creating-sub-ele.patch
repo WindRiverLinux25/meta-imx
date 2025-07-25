@@ -1,0 +1,51 @@
+From f9fceeffdeff264a12928e1f329ce0577ef0c057 Mon Sep 17 00:00:00 2001
+From: Thibault Saunier <tsaunier@igalia.com>
+Date: Wed, 14 Feb 2024 09:43:35 -0300
+Subject: [PATCH 55/68] autoconvert: Fix race condition when creating sub
+ elements
+
+There was a case where the element would get destroyed while being
+added to the hash table of elements
+
+Upstream-Status: Pending
+
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/6989>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/autoconvert/gstbaseautoconvert.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/gst/autoconvert/gstbaseautoconvert.c b/gst/autoconvert/gstbaseautoconvert.c
+index b928c11..6a9efc4 100644
+--- a/gst/autoconvert/gstbaseautoconvert.c
++++ b/gst/autoconvert/gstbaseautoconvert.c
+@@ -500,13 +500,12 @@ gst_base_auto_convert_add_element (GstBaseAutoConvert * self,
+ 
+   g_assert (filter_info->subbin);
+ 
+-
+-  element = filter_info->subbin;
++  element = gst_object_ref (filter_info->subbin);
+   GST_DEBUG_OBJECT (self, "Adding element %s to the baseautoconvert bin",
+       filter_info->name);
+ 
+   pads = internal_pads_new (self, GST_OBJECT_NAME (element));
+-  g_hash_table_insert (self->elements, element, pads);
++  g_hash_table_insert (self->elements, element, internal_pads_ref (pads));
+ 
+   gst_pad_set_chain_function (pads->sink,
+       GST_DEBUG_FUNCPTR (gst_base_auto_convert_internal_sink_chain));
+@@ -522,7 +521,9 @@ gst_base_auto_convert_add_element (GstBaseAutoConvert * self,
+   gst_pad_set_query_function (pads->src,
+       GST_DEBUG_FUNCPTR (gst_base_auto_convert_internal_src_query));
+ 
+-  return gst_object_ref (element);
++  internal_pads_unref (pads);
++
++  return element;
+ }
+ 
+ static GstElement *
+-- 
+2.43.0
+

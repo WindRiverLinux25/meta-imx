@@ -1,0 +1,50 @@
+From 250ba9aee7e5e06eda687e4e89fb62b62aea4543 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 29 Aug 2022 14:32:18 +0800
+Subject: [PATCH 37/68] LF-6321 wldisplay: don't break main loop when poll wait
+ was interrupted
+
+sometimes when do system suspend resume test, poll wait will return
+with errno == EINTR, which means poll wait was interrupted by system
+suspend, need continue main loop instead of break the loop and report
+communicating error with wayland server because we can resume connection
+after system resume back.
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/2949
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwldisplay.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/wayland/gstwldisplay.c b/gst-libs/gst/wayland/gstwldisplay.c
+index cd4c33b..7024cbf 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.c
++++ b/gst-libs/gst/wayland/gstwldisplay.c
+@@ -470,6 +470,8 @@ gst_wl_display_thread_run (gpointer data)
+   GstWlDisplay *self = data;
+   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+   GstPollFD pollfd = GST_POLL_FD_INIT;
++  gint err;
++  gboolean normal = FALSE;
+ 
+   pollfd.fd = wl_display_get_fd (priv->display);
+   gst_poll_add_fd (priv->wl_fd_poll, &pollfd);
+@@ -484,10 +486,13 @@ gst_wl_display_thread_run (gpointer data)
+     wl_display_flush (priv->display);
+ 
+     if (gst_poll_wait (priv->wl_fd_poll, GST_CLOCK_TIME_NONE) < 0) {
+-      gboolean normal = (errno == EBUSY);
++      err = errno;
++      normal = (err == EBUSY);
+       wl_display_cancel_read (priv->display);
+       if (normal)
+         break;
++      else if (err == EINTR)
++        continue;
+       else
+         goto error;
+     }
+-- 
+2.43.0
+

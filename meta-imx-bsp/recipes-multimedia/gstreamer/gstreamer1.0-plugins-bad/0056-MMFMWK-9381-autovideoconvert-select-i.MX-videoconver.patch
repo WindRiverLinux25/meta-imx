@@ -1,0 +1,119 @@
+From 74336c3b13227ae450b8962c6f5e3d49ada68a1d Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Fri, 24 May 2024 11:44:15 +0900
+Subject: [PATCH 56/68] MMFMWK-9381 autovideoconvert: select i.MX videoconvert
+ plugins to convert
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/autoconvert/gstautovideoconvert.c | 91 +++++++++++++++++++++++++++
+ 1 file changed, 91 insertions(+)
+
+diff --git a/gst/autoconvert/gstautovideoconvert.c b/gst/autoconvert/gstautovideoconvert.c
+index cf54683..037c53b 100644
+--- a/gst/autoconvert/gstautovideoconvert.c
++++ b/gst/autoconvert/gstautovideoconvert.c
+@@ -71,6 +71,97 @@ gst_auto_video_convert_init (GstAutoVideoConvert * autovideoconvert)
+ {
+   /* *INDENT-OFF* */
+   static const GstAutoVideoFilterGenerator gen[] = {
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = { "imxvideoconvert_g2d", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 2,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = { "imxvideoconvert_ipu", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 2,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = { "imxvideoconvert_pxp", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 2,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = { "imxvideoconvert_ocl", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 2,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_g2d", "imxvideoconvert_ipu", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_g2d", "imxvideoconvert_pxp", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_g2d", "imxvideoconvert_ocl", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_ipu", "imxvideoconvert_g2d", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_ipu", "imxvideoconvert_pxp", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_pxp", "imxvideoconvert_g2d", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_pxp", "imxvideoconvert_ipu", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_ocl", "imxvideoconvert_g2d", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
++    {
++      .first_elements = { NULL },
++      .colorspace_converters = {"imxvideoconvert_ocl", "imxvideoconvert_pxp", NULL },
++      .last_elements = { NULL },
++      .filters = { NULL },
++      .rank = GST_RANK_PRIMARY + 1,
++    },
+     {
+       .first_elements = { "bayer2rgb", NULL},
+       .colorspace_converters = { "videoconvertscale", NULL },
+-- 
+2.43.0
+

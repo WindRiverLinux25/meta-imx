@@ -1,0 +1,45 @@
+From 76b98eb22b5af769c4dbef7503409eb744bef07a Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 20 Apr 2020 16:02:55 +0800
+Subject: [PATCH 32/68] MMFMWK-8759 waylandsink: chose the first display size
+
+when enable multi display, need to chose the first display
+size as the default full screen size.
+
+Upstream-Status: Pending
+
+(cherry picked from commit 34c6f9891066d39748e56b777747358cd64c3db6)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwldisplay.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/gst-libs/gst/wayland/gstwldisplay.c b/gst-libs/gst/wayland/gstwldisplay.c
+index e3e2c21..5a7054b 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.c
++++ b/gst-libs/gst/wayland/gstwldisplay.c
+@@ -349,6 +349,7 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+   handle_xdg_wm_base_ping
+ };
+ 
++static void
+ output_handle_geometry (void *data, struct wl_output *wl_output,
+     int32_t x, int32_t y,
+     int32_t physical_width, int32_t physical_height,
+@@ -367,8 +368,11 @@ output_handle_mode (void *data, struct wl_output *wl_output,
+ 
+   /* we only care about the current mode */
+   if (flags & WL_OUTPUT_MODE_CURRENT) {
+-    priv->width = width;
+-    priv->height = height;
++    if (priv->width == -1 && priv->height == -1) {
++      priv->width = width;
++      priv->height = height;
++    }
++
+   }
+ }
+ 
+-- 
+2.43.0
+

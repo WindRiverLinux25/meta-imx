@@ -1,0 +1,34 @@
+From f8b9793ba1d235c301aa1e61e925f871c5c930ed Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Mon, 20 May 2024 19:10:37 +0900
+Subject: [PATCH 52/68] MMFMWK-9380 autovideoconvert: fix double unref
+
+For all error cases in the function gst_base_auto_convert_activate_element,
+the element is also dereferenced. And no need to deference the element again
+if this function return false.
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/6865
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/autoconvert/gstbaseautoconvert.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/gst/autoconvert/gstbaseautoconvert.c b/gst/autoconvert/gstbaseautoconvert.c
+index 4eb181b..eecc493 100644
+--- a/gst/autoconvert/gstbaseautoconvert.c
++++ b/gst/autoconvert/gstbaseautoconvert.c
+@@ -869,8 +869,6 @@ gst_base_auto_convert_sink_setcaps (GstBaseAutoConvert * self, GstCaps * caps,
+     if (gst_base_auto_convert_activate_element (self, element, caps)) {
+       res = TRUE;
+       break;
+-    } else {
+-      gst_object_unref (element);
+     }
+   }
+ 
+-- 
+2.43.0
+

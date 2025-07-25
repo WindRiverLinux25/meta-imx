@@ -1,0 +1,67 @@
+From bb714eddeef1f4da5bc0429b0fd4f2771b9ecf55 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Fri, 13 Mar 2020 22:15:45 +0800
+Subject: [PATCH 11/68] MMFMWK-8740 dvbsrc: don't fail if no frontend tuner.
+
+There no frontend tuner when use local stream.
+
+Upstream-Status: Pending
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit 215971c7ef25dbe57af038952c89b14e9cb3693f)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/dvb/gstdvbsrc.c | 18 ++++++++++--------
+ 1 file changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/sys/dvb/gstdvbsrc.c b/sys/dvb/gstdvbsrc.c
+index b8ddea9..b9609d8 100644
+--- a/sys/dvb/gstdvbsrc.c
++++ b/sys/dvb/gstdvbsrc.c
+@@ -1593,18 +1593,15 @@ gst_dvbsrc_open_frontend (GstDvbSrc * object, gboolean writable)
+   if (object->fd_frontend < 0) {
+     switch (errno) {
+       case ENOENT:
+-        GST_ELEMENT_ERROR (object, RESOURCE, NOT_FOUND,
+-            (_("Device \"%s\" does not exist."), frontend_dev), (NULL));
++        GST_WARNING_OBJECT (object, "Device \"%s\" does not exist.", frontend_dev);
+         break;
+       default:
+-        GST_ELEMENT_ERROR (object, RESOURCE, OPEN_READ_WRITE,
+-            (_("Could not open frontend device \"%s\"."), frontend_dev),
+-            GST_ERROR_SYSTEM);
++        GST_WARNING_OBJECT (object, "Could not open frontend device \"%s\".", frontend_dev);
+         break;
+     }
+ 
+     g_free (frontend_dev);
+-    return FALSE;
++    return TRUE;
+   }
+ 
+   if (object->supported_delsys)
+@@ -2198,6 +2195,11 @@ gst_dvbsrc_output_frontend_stats (GstDvbSrc * src, fe_status_t * status)
+   GstStructure *structure;
+   gint err;
+ 
++  if (src->fd_frontend < 0) {
++    GST_WARNING_OBJECT (src, "Frontend not open");
++    return TRUE;
++  }
++
+   errno = 0;
+ 
+   LOOP_WHILE_EINTR (err, ioctl (src->fd_frontend, FE_READ_STATUS, status));
+@@ -2337,8 +2339,8 @@ gst_dvbsrc_tune_fe (GstDvbSrc * object)
+   GST_DEBUG_OBJECT (object, "Starting the frontend tuning process");
+ 
+   if (object->fd_frontend < 0) {
+-    GST_INFO_OBJECT (object, "Frontend not open: tuning later");
+-    return FALSE;
++    GST_WARNING_OBJECT (object, "Frontend not open: tuning later");
++    return TRUE;
+   }
+ 
+   /* If set, confirm the chosen delivery system is actually
+-- 
+2.43.0
+

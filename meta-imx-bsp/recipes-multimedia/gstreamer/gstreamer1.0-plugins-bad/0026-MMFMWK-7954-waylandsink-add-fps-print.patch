@@ -1,0 +1,78 @@
+From f9dc6ba7cc65879d544ec67efaf313a81b1353b1 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 29 Mar 2018 11:38:48 +0800
+Subject: [PATCH 26/68] MMFMWK-7954 waylandsink: add fps print
+
+Upstream-Status: Pending
+
+(cherry picked from commit 95bfb3672b4bce461cff5b82a20722cfd395c8a6)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c | 14 ++++++++++++++
+ ext/wayland/gstwaylandsink.h |  4 ++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index a6613a1..64734b7 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -201,6 +201,8 @@ gst_wayland_sink_init (GstWaylandSink * self)
+ {
+   g_mutex_init (&self->display_lock);
+   g_mutex_init (&self->render_lock);
++  self->frame_showed = 0;
++  self->run_time = 0;
+ }
+ 
+ static void
+@@ -464,6 +466,9 @@ gst_wayland_sink_change_state (GstElement * element, GstStateChange transition)
+     return ret;
+ 
+   switch (transition) {
++    case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
++      self->run_time = gst_element_get_start_time (element);
++      break;
+     case GST_STATE_CHANGE_PAUSED_TO_READY:
+       gst_buffer_replace (&self->last_buffer, NULL);
+       if (self->window) {
+@@ -493,6 +498,14 @@ gst_wayland_sink_change_state (GstElement * element, GstStateChange transition)
+ 
+       g_mutex_unlock (&self->display_lock);
+       g_clear_object (&self->pool);
++
++      if (self->run_time > 0) {
++        g_print ("Total showed frames (%lld), playing for (%"GST_TIME_FORMAT"), fps (%.3f).\n",
++                self->frame_showed, GST_TIME_ARGS (self->run_time),
++                (gfloat)GST_SECOND * self->frame_showed / self->run_time);
++      }
++      self->frame_showed = 0;
++      self->run_time = 0;
+       break;
+     default:
+       break;
+@@ -1106,6 +1119,7 @@ dst_map_failed:
+   }
+ done:
+   {
++    self->frame_showed++;
+     g_mutex_unlock (&self->render_lock);
+     return ret;
+   }
+diff --git a/ext/wayland/gstwaylandsink.h b/ext/wayland/gstwaylandsink.h
+index 5bbb10a..294c9ea 100644
+--- a/ext/wayland/gstwaylandsink.h
++++ b/ext/wayland/gstwaylandsink.h
+@@ -69,6 +69,10 @@ struct _GstWaylandSink
+ 
+   gchar *drm_device;
+   gboolean skip_dumb_buffer_copy;
++
++  /* fps print support */
++  guint64 frame_showed;
++  GstClockTime run_time;
+ };
+ 
+ struct _GstWaylandSinkClass
+-- 
+2.43.0
+

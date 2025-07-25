@@ -1,0 +1,39 @@
+From 42eb478bf561c4bd86a6c7824e837c51aea13b3a Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Fri, 24 May 2024 12:16:33 +0900
+Subject: [PATCH 54/68] MMFMWK-9382 autovideoconvert: should not forward the
+ allocation query if no element is selected
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/6927
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/autoconvert/gstbaseautoconvert.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/gst/autoconvert/gstbaseautoconvert.c b/gst/autoconvert/gstbaseautoconvert.c
+index eecc493..b928c11 100644
+--- a/gst/autoconvert/gstbaseautoconvert.c
++++ b/gst/autoconvert/gstbaseautoconvert.c
+@@ -1150,6 +1150,16 @@ gst_base_auto_convert_sink_query (GstPad * pad, GstObject * parent,
+     return ret;
+   }
+ 
++  /* Should not forward the allocation query downstream directly
++   * if no subelement is selected, otherwise it can influence
++   * the downstream allocation choices and upstream buffer usage.
++   */
++  if (GST_QUERY_TYPE (query) == GST_QUERY_ALLOCATION) {
++    GST_DEBUG_OBJECT (self,
++        "no subelement is selected yet, can't answer ALLOCATION query");
++    return FALSE;
++  }
++
+ ignore_acceptcaps_failure:
+ 
+   if (GST_QUERY_TYPE (query) == GST_QUERY_ACCEPT_CAPS) {
+-- 
+2.43.0
+

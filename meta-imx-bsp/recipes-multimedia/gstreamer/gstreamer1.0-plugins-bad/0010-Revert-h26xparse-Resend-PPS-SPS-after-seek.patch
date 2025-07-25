@@ -1,0 +1,47 @@
+From da1881a41c59d07f03b989149a3abf67b0868131 Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Mon, 21 May 2018 16:12:37 -0700
+Subject: [PATCH 10/68] Revert "h26xparse: Resend PPS/SPS after seek"
+
+This reverts commit fe116092cdcda0d1d100e1dbbc4577cd9e4e074a.
+Our video decoder needn't SPS/PPS after seek. The commit will cause
+below stream seek hang.
+SHAVectors/H265Dec/Conformance/TS/HEVC_640x360_AACLC_44.1Khz_2ch.ts
+SHAVectors/H265Dec/Conformance/MKV/HEVC_848x480_24fps_MP2_48Khz_2ch_320Kbps_Sintel-Trailer.mkv
+
+Upstream-Status: Pending
+
+(cherry picked from commit 58f7b9919697aada110eb34f0e961c21035acbd7)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/videoparsers/gsth264parse.c | 1 -
+ gst/videoparsers/gsth265parse.c | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/gst/videoparsers/gsth264parse.c b/gst/videoparsers/gsth264parse.c
+index ef9c6de..7d6dd4a 100644
+--- a/gst/videoparsers/gsth264parse.c
++++ b/gst/videoparsers/gsth264parse.c
+@@ -3819,7 +3819,6 @@ gst_h264_parse_event (GstBaseParse * parse, GstEvent * event)
+     case GST_EVENT_SEGMENT_DONE:
+       h264parse->dts = GST_CLOCK_TIME_NONE;
+       h264parse->ts_trn_nb = GST_CLOCK_TIME_NONE;
+-      h264parse->push_codec = TRUE;
+ 
+       res = GST_BASE_PARSE_CLASS (parent_class)->sink_event (parse, event);
+       break;
+diff --git a/gst/videoparsers/gsth265parse.c b/gst/videoparsers/gsth265parse.c
+index 5b18e61..419e9e6 100644
+--- a/gst/videoparsers/gsth265parse.c
++++ b/gst/videoparsers/gsth265parse.c
+@@ -3441,7 +3441,6 @@ gst_h265_parse_event (GstBaseParse * parse, GstEvent * event)
+     }
+     case GST_EVENT_FLUSH_STOP:
+     case GST_EVENT_SEGMENT_DONE:
+-      h265parse->push_codec = TRUE;
+       res = GST_BASE_PARSE_CLASS (parent_class)->sink_event (parse, event);
+       break;
+     case GST_EVENT_SEGMENT:
+-- 
+2.43.0
+

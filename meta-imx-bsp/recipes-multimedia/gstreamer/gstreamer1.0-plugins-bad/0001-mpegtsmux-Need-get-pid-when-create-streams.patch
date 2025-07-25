@@ -1,0 +1,48 @@
+From 50b9790f133dcca71fa58a68f9e9dedb071902ff Mon Sep 17 00:00:00 2001
+From: Song Bing <b06498@freescale.com>
+Date: Wed, 22 Apr 2015 18:06:35 +0800
+Subject: [PATCH 01/68] mpegtsmux: Need get pid when create streams.
+
+when camerabin use mpegtsmux as muxer, start video recording and then
+stop video recording and then start video recording, mpegtsmux get wrong
+pid.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=748288
+
+Upstream-Status: Pending
+
+(cherry picked from commit aa65cbc085acba15b93e52a2ff0432522042889a)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/mpegtsmux/gstbasetsmux.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/gst/mpegtsmux/gstbasetsmux.c b/gst/mpegtsmux/gstbasetsmux.c
+index e81bb8b..d83441c 100644
+--- a/gst/mpegtsmux/gstbasetsmux.c
++++ b/gst/mpegtsmux/gstbasetsmux.c
+@@ -934,6 +934,21 @@ gst_base_ts_mux_create_pad_stream (GstBaseTsMux * mux, GstPad * pad,
+       ts_pad->prog_id = idx;
+     } else {
+       ts_pad->prog_id = DEFAULT_PROG_ID;
++
++      if (!ts_pad->pid) {
++        gint pid = -1;
++
++        name = GST_PAD_NAME (pad);
++        if (name != NULL && sscanf (name, "sink_%d", &pid) == 1) {
++          if (tsmux_find_stream (mux->tsmux, pid)) {
++            GST_WARNING_OBJECT (mux, "Duplicate PID");
++          }
++        } else {
++          pid = tsmux_get_new_pid (mux->tsmux);
++        }
++
++        ts_pad->pid = pid;
++      }
+     }
+   }
+ 
+-- 
+2.43.0
+

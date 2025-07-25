@@ -1,0 +1,1089 @@
+From 6681ac0cc2a4611d938905073b603eab406ba2a7 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Tue, 12 Apr 2022 14:38:09 +0800
+Subject: [PATCH 23/68] LF-5172 dashdemux: support adaptive playback for webm
+ and single fragment mp4 dash stream 1. parse webm stream and support adaptive
+ playback 2. support adaptive playback for single fragment mp4 stream 3. add
+ data download control for webm and single fragment mp4 stream
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/dash/gstdashdemux.c             | 305 ++++++++++++++++++
+ ext/dash/gstdashdemux.h             |   2 +
+ ext/dash/gstmpdhelper.c             |   8 +
+ ext/dash/meson.build                |   2 +-
+ gst-libs/gst/matroska/gstmatroska.c | 460 ++++++++++++++++++++++++++++
+ gst-libs/gst/matroska/gstmatroska.h | 104 +++++++
+ gst-libs/gst/matroska/meson.build   |  22 ++
+ gst-libs/gst/meson.build            |   2 +
+ 8 files changed, 904 insertions(+), 1 deletion(-)
+ create mode 100755 gst-libs/gst/matroska/gstmatroska.c
+ create mode 100755 gst-libs/gst/matroska/gstmatroska.h
+ create mode 100755 gst-libs/gst/matroska/meson.build
+
+diff --git a/ext/dash/gstdashdemux.c b/ext/dash/gstdashdemux.c
+index 5471b83..596e178 100644
+--- a/ext/dash/gstdashdemux.c
++++ b/ext/dash/gstdashdemux.c
+@@ -424,6 +424,12 @@ static gboolean gst_dash_demux_poll_clock_drift (GstDashDemux * demux);
+ static GTimeSpan gst_dash_demux_get_clock_compensation (GstDashDemux * demux);
+ static GDateTime *gst_dash_demux_get_server_now_utc (GstDashDemux * demux);
+ 
++static gboolean
++gst_dash_demux_has_next_fragment(GstAdaptiveDemuxStream * stream);
++static GstFlowReturn
++gst_dash_demux_handle_matroska (GstAdaptiveDemux * demux, GstAdaptiveDemuxStream *stream, 
++      GstAdapter *adapter); 
++
+ #define SIDX(s) (&(s)->sidx_parser.sidx)
+ 
+ static inline GstSidxBoxEntry *
+@@ -947,6 +953,7 @@ gst_dash_demux_setup_all_streams (GstDashDemux * demux)
+     }
+ 
+     gst_isoff_sidx_parser_init (&stream->sidx_parser);
++    gst_matroska_parser_init(&stream->matroska_parser);
+   }
+ 
+   return TRUE;
+@@ -1356,6 +1363,14 @@ gst_dash_demux_stream_update_fragment_info (GstAdaptiveDemuxStream * stream)
+        * stream to a subsegment */
+       return GST_FLOW_OK;
+     }
++
++    /* single fragment stream */
++    if (!gst_dash_demux_has_next_fragment(stream)) {
++      if (stream->fragment.index_uri) {
++        GST_DEBUG_OBJECT(stream->pad, "single fragment");
++        return GST_FLOW_OK;
++      }
++    }
+   }
+ 
+   if (dashstream->moof_sync_samples
+@@ -1469,6 +1484,14 @@ gst_dash_demux_stream_update_fragment_info (GstAdaptiveDemuxStream * stream)
+         dashstream->actual_position += entry->duration;
+       } else {
+         stream->fragment.range_end = fragment.range_end;
++
++        /* single fragment stream */
++        if (!gst_dash_demux_has_next_fragment(stream)) {
++          stream->fragment.range_end =
++            stream->fragment.range_start + entry->size - 1;
++          GST_DEBUG_OBJECT (stream->pad, "single fragment, update range_end, sidx = %d",
++          SIDX(dashstream)->entry_index);
++        }
+       }
+     } else {
+       dashstream->actual_position = stream->fragment.timestamp =
+@@ -1633,6 +1656,7 @@ gst_dash_demux_stream_seek (GstAdaptiveDemuxStream * stream, gboolean forward,
+       GST_LOG_OBJECT (stream->pad,
+           "Segment index was changed, reset sidx parser");
+       gst_isoff_sidx_parser_clear (&dashstream->sidx_parser);
++      gst_matroska_parser_clear (&dashstream->matroska_parser);
+       dashstream->sidx_base_offset = 0;
+       dashstream->allow_sidx = TRUE;
+     }
+@@ -1643,6 +1667,7 @@ gst_dash_demux_stream_seek (GstAdaptiveDemuxStream * stream, gboolean forward,
+         GST_ERROR_OBJECT (stream->pad, "Couldn't find position in sidx");
+         dashstream->sidx_position = GST_CLOCK_TIME_NONE;
+         gst_isoff_sidx_parser_clear (&dashstream->sidx_parser);
++        gst_matroska_parser_clear (&dashstream->matroska_parser);
+       }
+       dashstream->pending_seek_ts = GST_CLOCK_TIME_NONE;
+     } else {
+@@ -2277,6 +2302,16 @@ gst_dash_demux_stream_advance_fragment (GstAdaptiveDemuxStream * stream)
+   return ret;
+ }
+ 
++static gboolean
++gst_dash_demux_has_next_fragment(GstAdaptiveDemuxStream * stream)
++{
++  GstDashDemux *dashdemux = GST_DASH_DEMUX_CAST (stream->demux);
++  GstDashDemuxStream *dashstream = (GstDashDemuxStream *) stream;
++
++  return gst_mpd_client_has_next_segment (dashdemux->client,
++      dashstream->active_stream, stream->demux->segment.rate > 0.0);
++}
++
+ static gboolean
+ gst_dash_demux_stream_select_bitrate (GstAdaptiveDemuxStream * stream,
+     guint64 bitrate)
+@@ -2294,6 +2329,17 @@ gst_dash_demux_stream_select_bitrate (GstAdaptiveDemuxStream * stream,
+     goto end;
+   }
+ 
++  if (!gst_dash_demux_has_next_fragment(stream)) {
++    GST_DEBUG_OBJECT (stream->pad, "single fragment stream, "
++      "connection_speed: %d, bitrate: %" G_GUINT64_FORMAT,
++      base_demux->connection_speed, bitrate);
++
++    if (stream->downloading_index || stream->downloading_header) {
++      GST_DEBUG_OBJECT (stream->pad, "not media segment");
++      return ret;
++    }
++  }
++
+   /* In key-frame trick mode don't change bitrates */
+   if (GST_ADAPTIVE_DEMUX_IN_TRICKMODE_KEY_UNITS (demux)) {
+     GST_DEBUG_OBJECT (demux, "In key-frame trick mode, not changing bitrates");
+@@ -2375,6 +2421,7 @@ gst_dash_demux_stream_select_bitrate (GstAdaptiveDemuxStream * stream,
+     }
+ 
+     gst_isoff_sidx_parser_clear (&dashstream->sidx_parser);
++    gst_matroska_parser_clear (&dashstream->matroska_parser);
+     dashstream->sidx_base_offset = 0;
+     dashstream->allow_sidx = TRUE;
+ 
+@@ -3617,6 +3664,12 @@ gst_dash_demux_data_received (GstAdaptiveDemux * demux,
+   gst_adapter_push (dash_stream->adapter, buffer);
+   buffer = NULL;
+ 
++  /* matroska stream */
++  if ((ret = gst_dash_demux_handle_matroska(demux, stream,
++    dash_stream->adapter)) != GST_FLOW_NOT_SUPPORTED) {
++    return ret;
++  }
++
+   if (dash_stream->is_isobmff || stream->downloading_index) {
+     /* SIDX index is also ISOBMMF */
+     ret = gst_dash_demux_handle_isobmff (demux, stream);
+@@ -4158,3 +4211,255 @@ gst_dash_demux_get_server_now_utc (GstDashDemux * demux)
+   g_date_time_unref (client_now);
+   return server_now;
+ }
++
++static GstFlowReturn 
++gst_dash_demux_update_sidx_parser_by_matroska_parser(GstAdaptiveDemux *demux, 
++     GstAdaptiveDemuxStream *stream)
++{
++  guint64 index = 0;
++  GstDashDemuxStream *dash_stream = (GstDashDemuxStream *)stream;
++  GstMatroskaParser *matroska_parser = &(dash_stream->matroska_parser);
++  GstSidxParser *sidx_parser = &dash_stream->sidx_parser;
++  GstFlowReturn res = GST_FLOW_OK;
++   GstSidxBox *sidx = NULL;
++
++  /* Check matroska cues information list */
++  if (!matroska_parser->array) {
++    GST_DEBUG_OBJECT(stream->pad, "the cues information array list is null ");
++    return res;
++  }
++  
++  /* update sidx parser */
++  sidx_parser->sidx.first_offset = matroska_parser->segment_head_offset;
++  /* sidx base offset used in check subfragment boundary */
++  dash_stream->sidx_base_offset = matroska_parser->segment_head_offset;
++  sidx_parser->sidx.entry_index = 0;
++  sidx_parser->sidx.entries_count = matroska_parser->cue_point_num;
++  sidx_parser->sidx.entries = 
++    g_malloc (sizeof (GstSidxBoxEntry) * sidx_parser->sidx.entries_count);
++  GST_DEBUG_OBJECT(stream->pad, "matroska parser: segment_head_offset = %" G_GUINT64_FORMAT,
++              matroska_parser->segment_head_offset);
++  
++  /* Update sidx box information */
++  while (index < sidx_parser->sidx.entries_count) {
++    GstSidxBoxEntry *sidx_entry = &sidx_parser->sidx.entries[index];
++    GstMatroskaPointData *cue_entry = &g_array_index (matroska_parser->array, 
++                    GstMatroskaPointData, index);
++    sidx_entry->size = 0;
++    sidx_entry->offset = cue_entry->track_pos.cluster_pos;
++    sidx_entry->pts = cue_entry->cue_time * matroska_parser->time_scale;
++    sidx_entry->duration = -1;
++
++    if (index >= 1) {
++      GstSidxBoxEntry *prev_sidx_entry = &sidx_parser->sidx.entries[index - 1];
++      prev_sidx_entry->duration = (sidx_entry->pts - prev_sidx_entry->pts);
++      prev_sidx_entry->size = (sidx_entry->offset - prev_sidx_entry->offset);
++      GST_DEBUG_OBJECT(stream->pad, "sidx_entry[%" G_GUINT64_FORMAT "]: duration = %" G_GUINT64_FORMAT
++          ", size = %d", index - 1, prev_sidx_entry->duration, prev_sidx_entry->size);
++    }
++
++    GST_DEBUG_OBJECT(stream->pad, "sidx_entry[%" G_GUINT64_FORMAT "]: offset = %" G_GUINT64_FORMAT
++        ", pts = %" G_GUINT64_FORMAT, index, sidx_entry->offset, sidx_entry->pts);
++    index++; 
++  }
++
++  GST_DEBUG_OBJECT(stream->pad, "free array, addr = %p", matroska_parser->array);
++  g_array_free(matroska_parser->array, TRUE);
++  matroska_parser->array = NULL;
++  
++  /* We might've cleared the index above */
++  sidx = SIDX (dash_stream);
++  if (sidx->entries_count > 0) {
++    if (GST_CLOCK_TIME_IS_VALID (dash_stream->pending_seek_ts)) {
++      /* FIXME, preserve seek flags */
++      if (gst_dash_demux_stream_sidx_seek (dash_stream,
++              demux->segment.rate >= 0, 0, dash_stream->pending_seek_ts,
++              NULL) != GST_FLOW_OK) {
++        GST_ERROR_OBJECT (stream->pad, "pending_seek_ts is valid, stream seek error");
++        /* select fragment position */
++        dash_stream->sidx_position = GST_CLOCK_TIME_NONE;
++        gst_isoff_sidx_parser_clear (&dash_stream->sidx_parser);
++      } else {
++        GST_DEBUG_OBJECT (stream->pad, "pending_seek_ts is valid, stream seek ok");
++      }
++      dash_stream->pending_seek_ts = GST_CLOCK_TIME_NONE;
++    } else {
++      /* sidx seek */
++      if (dash_stream->sidx_position == GST_CLOCK_TIME_NONE) {
++        SIDX (dash_stream)->entry_index = 0;
++      } else {
++        /* update sidx entry_index*/
++        if (gst_dash_demux_stream_sidx_seek (dash_stream,
++                demux->segment.rate >= 0, GST_SEEK_FLAG_SNAP_BEFORE,
++                dash_stream->sidx_position, NULL) != GST_FLOW_OK) {
++          GST_ERROR_OBJECT (stream->pad,
++              "Couldn't find position in sidx");
++          dash_stream->sidx_position = GST_CLOCK_TIME_NONE;
++          gst_isoff_sidx_parser_clear (&dash_stream->sidx_parser);
++        } else {
++          GST_DEBUG_OBJECT (stream->pad,
++              "stream sidx seek ok, sidx index = %d, sidx_position = %" G_GUINT64_FORMAT,
++              sidx_parser->sidx.entry_index, dash_stream->sidx_position);
++        }
++      }
++      dash_stream->sidx_position =
++          SIDX (dash_stream)->entries[SIDX (dash_stream)->entry_index].
++          pts;
++    }
++  }
++
++  sidx_parser->status = GST_ISOFF_SIDX_PARSER_FINISHED;
++  return res;
++}
++
++static GstFlowReturn
++gst_dash_demux_handle_matroska (GstAdaptiveDemux * demux, GstAdaptiveDemuxStream * stream, GstAdapter *adapter)
++{
++  GstBuffer * buffer = NULL;
++  GstDashDemuxStream *dash_stream = (GstDashDemuxStream *)stream;
++  GstMatroskaParser *matroska_parser = &(dash_stream->matroska_parser);
++  GstFlowReturn ret = GST_FLOW_OK;
++   GstMatroskaParserResult res = GST_MATROSKA_PARSER_OK;
++
++  guint index_header_or_data = 0;
++  if (stream->downloading_index)
++    index_header_or_data = 1;
++  else if (stream->downloading_header)
++    index_header_or_data = 2;
++  else
++    index_header_or_data = 3;
++
++  GST_DEBUG_OBJECT(stream->pad, "index_header_or_data = %d, rep idx = %d,"
++    "sid index = %d, sidx_base_offset = %" G_GINT64_FORMAT ", stream current_offset = %" G_GUINT64_FORMAT,
++    index_header_or_data,
++    dash_stream->active_stream->representation_idx,
++    dash_stream->sidx_parser.sidx.entry_index,
++    dash_stream->sidx_base_offset,
++    dash_stream->current_offset);
++
++  /* entry matroska parser */
++  res = gst_matroska_parser_entry(matroska_parser, adapter);
++  if (res == GST_MATROSKA_PARSER_NOT_SUPPORTED) {
++    /* Not matroska format */
++    return GST_FLOW_NOT_SUPPORTED;
++  } else {
++    if (res == GST_MATROSKA_PARSER_DONE) {
++        gst_dash_demux_update_sidx_parser_by_matroska_parser (demux, stream);
++        GST_DEBUG_OBJECT(stream->pad, "update sidx parser, consume = %" G_GUINT64_FORMAT, matroska_parser->consume);
++    }
++  }
++
++  if ((dash_stream->sidx_parser.status == GST_ISOFF_SIDX_PARSER_FINISHED) && 
++    (index_header_or_data == 3)) {
++    gsize available;
++    GST_DEBUG_OBJECT (stream->pad, "cluster data");
++
++    /* Not ISOBMFF but had a SIDX index. Does this even exist or work? */
++    while (ret == GST_FLOW_OK
++        && ((available = gst_adapter_available (dash_stream->adapter)) > 0)) {
++
++      gboolean advance = FALSE;
++      guint64 sidx_end_offset =
++          dash_stream->sidx_base_offset +
++          SIDX_CURRENT_ENTRY (dash_stream)->offset +
++          SIDX_CURRENT_ENTRY (dash_stream)->size;
++      gboolean has_next = gst_dash_demux_stream_has_next_subfragment (stream);
++
++      if (dash_stream->current_offset + available < sidx_end_offset) {
++        buffer = gst_adapter_take_buffer (dash_stream->adapter, available);
++      } else {
++        if (!has_next && sidx_end_offset <= dash_stream->current_offset) {
++          /* Drain all bytes, since there might be trailing bytes at the end of subfragment */
++          buffer = gst_adapter_take_buffer (dash_stream->adapter, available);
++          GST_DEBUG_OBJECT (stream->pad, "drain data");
++        } else {
++          if (sidx_end_offset <= dash_stream->current_offset) {
++            /* This means a corrupted stream or a bug: ignoring bugs, it
++             * should only happen if the SIDX index is corrupt */
++            GST_ERROR_OBJECT (stream->pad, "Invalid SIDX state");
++            gst_adapter_clear (dash_stream->adapter);
++            ret = GST_FLOW_ERROR;
++            break;
++          } else {
++            buffer =
++                gst_adapter_take_buffer (dash_stream->adapter,
++                sidx_end_offset - dash_stream->current_offset);
++            advance = TRUE;
++          }
++        }
++      }
++
++      GST_BUFFER_OFFSET (buffer) = dash_stream->current_offset;
++      GST_BUFFER_OFFSET_END (buffer) =
++          GST_BUFFER_OFFSET (buffer) + gst_buffer_get_size (buffer);
++      dash_stream->current_offset = GST_BUFFER_OFFSET_END (buffer);
++
++      GST_DEBUG_OBJECT (stream->pad, "rep idx = %d, sidx idx = %d, sidx_end_offset = %" G_GUINT64_FORMAT
++      ", current_offset = %" G_GUINT64_FORMAT ", buffer offset end = %" G_GUINT64_FORMAT,
++      dash_stream->active_stream->representation_idx,
++      dash_stream->sidx_parser.sidx.entry_index,
++      sidx_end_offset,
++      GST_BUFFER_OFFSET (buffer),
++      GST_BUFFER_OFFSET_END (buffer));
++
++      ret = gst_adaptive_demux_stream_push_buffer (stream, buffer);
++      if (advance) {
++        if (has_next) {
++          GstFlowReturn new_ret;
++          GST_DEBUG_OBJECT (stream->pad, "has next subfragment, advance");
++          new_ret =
++              gst_adaptive_demux_stream_advance_fragment (demux, stream,
++              SIDX_CURRENT_ENTRY (dash_stream)->duration);
++
++          /* only overwrite if it was OK before */
++          if (ret == GST_FLOW_OK) {
++            ret = new_ret;
++            
++            /* check whether need to change representation index */
++            if (ret != GST_FLOW_OK) {
++              GST_DEBUG_OBJECT (stream->pad, "stop send data");
++              return ret;
++              }
++            } 
++          }
++        } else {
++          /* reach the last sub fragment boundary */
++          break;
++      }
++    }
++  } else {
++    guint64 avail_len = gst_adapter_available (dash_stream->adapter);
++    
++    GST_DEBUG_OBJECT (stream->pad, "main header = %d: matroska parser offset = %" G_GUINT64_FORMAT
++        ", avail_len = %" G_GUINT64_FORMAT,
++        index_header_or_data, matroska_parser->offset, avail_len);
++
++    /* If have parsed data, can only send parsed data */
++    if (matroska_parser->offset) {
++      if (matroska_parser->offset > avail_len) {
++         GST_ERROR_OBJECT (stream->pad, "need to return, matroska parser offset: %" G_GUINT64_FORMAT
++         " > avail_len: %" G_GUINT64_FORMAT,
++           matroska_parser->offset, avail_len);
++       return ret;
++      } else {
++        avail_len = matroska_parser->offset;
++        /* Clear parser offset */
++        matroska_parser->offset = 0;
++      }
++    }
++
++    /* this should be the main header, just push it all */  
++    buffer = gst_adapter_take_buffer (dash_stream->adapter,
++      avail_len);
++    
++    GST_BUFFER_OFFSET (buffer) = dash_stream->current_offset;
++    GST_BUFFER_OFFSET_END (buffer) =
++        GST_BUFFER_OFFSET (buffer) + gst_buffer_get_size (buffer);
++    dash_stream->current_offset = GST_BUFFER_OFFSET_END (buffer);
++    ret = gst_adaptive_demux_stream_push_buffer (stream, buffer);
++  }
++
++  return ret;
++}
++
++
+diff --git a/ext/dash/gstdashdemux.h b/ext/dash/gstdashdemux.h
+index 6374fc9..bb869a1 100644
+--- a/ext/dash/gstdashdemux.h
++++ b/ext/dash/gstdashdemux.h
+@@ -37,6 +37,7 @@
+ #include "gstmpdclient.h"
+ #include <gst/isoff/gstisoff.h>
+ #include <gst/uridownloader/gsturidownloader.h>
++#include <gst/matroska/gstmatroska.h>
+ 
+ G_BEGIN_DECLS
+ #define GST_TYPE_DASH_DEMUX \
+@@ -72,6 +73,7 @@ struct _GstDashDemuxStream
+   gint64 sidx_base_offset;
+   gboolean allow_sidx;
+   GstClockTime pending_seek_ts;
++  GstMatroskaParser matroska_parser;
+ 
+   GstAdapter *adapter;
+   /* current offset of the first byte in the adapter / last byte we pushed or
+diff --git a/ext/dash/gstmpdhelper.c b/ext/dash/gstmpdhelper.c
+index 26c78ba..9ed4c46 100644
+--- a/ext/dash/gstmpdhelper.c
++++ b/ext/dash/gstmpdhelper.c
+@@ -87,8 +87,12 @@ gst_mpd_helper_mimetype_to_stream_type (const gchar * mimeType)
+     return GST_STREAM_TYPE_VIDEO;
+   } else if (strcmp (mimeType, "video/mp4") == 0) {
+     return GST_STREAM_TYPE_VIDEO;
++  } else if (strcmp (mimeType, "video/webm") == 0) {
++    return GST_STREAM_TYPE_VIDEO;
+   } else if (strcmp (mimeType, "audio/mp4") == 0) {
+     return GST_STREAM_TYPE_AUDIO;
++  } else if (strcmp (mimeType, "audio/webm") == 0) {
++    return GST_STREAM_TYPE_AUDIO;
+   } else if (strcmp (mimeType, "text/vtt") == 0) {
+     return GST_STREAM_TYPE_TEXT;
+   } else
+@@ -104,8 +108,12 @@ gst_mpd_helper_mimetype_to_caps (const gchar * mimeType)
+     return "video/mpegts, systemstream=(bool) true";
+   } else if (strcmp (mimeType, "video/mp4") == 0) {
+     return "video/quicktime";
++  } else if (strcmp (mimeType, "video/webm") == 0) {
++    return "video/webm";
+   } else if (strcmp (mimeType, "audio/mp4") == 0) {
+     return "audio/x-m4a";
++  } else if (strcmp (mimeType, "audio/webm") == 0) {
++    return "audio/webm";
+   } else if (strcmp (mimeType, "text/vtt") == 0) {
+     return "application/x-subtitle-vtt";
+   } else
+diff --git a/ext/dash/meson.build b/ext/dash/meson.build
+index dbaf99e..5558522 100644
+--- a/ext/dash/meson.build
++++ b/ext/dash/meson.build
+@@ -47,7 +47,7 @@ if xml2_dep.found()
+     include_directories : [configinc, libsinc],
+     dependencies : [gstadaptivedemux_dep, gsturidownloader_dep, gsttag_dep,
+                     gstnet_dep, gstpbutils_dep, gstbase_dep, gstisoff_dep,
+-                    gio_dep, xml2_dep],
++                    gio_dep, xml2_dep, gstmatroska_dep],
+     install : true,
+     install_dir : plugins_install_dir,
+   )
+diff --git a/gst-libs/gst/matroska/gstmatroska.c b/gst-libs/gst/matroska/gstmatroska.c
+new file mode 100755
+index 0000000..29f4e9a
+--- /dev/null
++++ b/gst-libs/gst/matroska/gstmatroska.c
+@@ -0,0 +1,460 @@
++/* GStreamer
++ * Copyright 2021-2022 NXP
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
++ * Boston, MA 02110-1301, USA.
++ */
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include "gstmatroska.h"
++#include "stdio.h"
++
++GST_DEBUG_CATEGORY_STATIC (gst_matroska_debug);
++#define GST_CAT_DEFAULT gst_matroska_debug
++
++static gboolean initialized = FALSE;
++
++#define INITIALIZE_DEBUG_CATEGORY \
++  if (!initialized) { \
++  GST_DEBUG_CATEGORY_INIT (gst_matroska_debug, "matroska", 0, \
++      "Matroska Format parsing library"); \
++    initialized = TRUE; \
++  }
++
++/* log definition */
++#define GST_MATROSKA_PARSER_DEBUG                  GST_LOG
++
++/* L0: EMBL header */
++#define GST_EBML_ID_HEADER                         0x1A45DFA3
++/* L0: toplevel Segment */
++#define GST_MATROSKA_ID_SEGMENT                    0x18538067
++#define GST_MATROSKA_ID_CLUSTER                    0x1F43B675
++
++/* L1: matroska top-level master IDs, childs of Segment */
++#define GST_MATROSKA_ID_SEEKHEAD                   0x114D9B74
++#define GST_MATROSKA_ID_SEGMENTINFO                0x1549A966
++#define GST_MATROSKA_ID_TRACKS                     0x1654AE6B
++#define GST_MATROSKA_ID_CUES                       0x1C53BB6B
++#define GST_MATROSKA_ID_TAGS                       0x1254C367
++#define GST_MATROSKA_ID_ATTACHMENTS                0x1941A469
++#define GST_MATROSKA_ID_CHAPTERS                   0x1043A770
++
++/* L2: time scale, child of segment information  */
++#define GST_MATROSKA_ID_TIMECODESCALE              0x2AD7B1
++#define GST_MATROSKA_ID_DURATION                   0x4489
++/* L2: cue point, child of cues */
++#define GST_MATROSKA_ID_POINTENTRY                 0xBB
++/* L3: cue time, child of cue point */
++#define GST_MATROSKA_ID_CUETIME                    0xB3
++/* L3: cue track position , child of cue point */
++#define GST_MATROSKA_ID_CUETRACKPOSITION           0xB7
++/* L4: cue track, child of track position */
++#define GST_MATROSKA_ID_CUETRACK                   0xF7
++/* L4: cue cluster position, child of track position */
++#define GST_MATROSKA_ID_CUECLUSTERPOSITION         0xF1
++#define GST_MATROSKA_ID_CUEBLOCKNUMBER             0x5378
++
++void
++gst_matroska_parser_init (GstMatroskaParser * parser)
++{
++  if (parser->array) {
++    GST_ERROR ("array list has not free yet, addr = %p", parser->array);
++  }
++  memset (parser, 0, sizeof (GstMatroskaParser));
++}
++
++void
++gst_matroska_parser_clear (GstMatroskaParser * parser)
++{
++  if (parser->array) {
++    GST_ERROR ("free array list, addr = %p", parser->array);
++    g_array_free (parser->array, TRUE);
++  }
++  memset (parser, 0, sizeof (GstMatroskaParser));
++}
++
++static gint32
++gst_matroska_parser_read_len (guint8 data)
++{
++  guint i = 0;
++
++  for (i = 0; i < 8; i++) {
++    if ((data & (0x80 >> i)) != 0)
++      break;
++  }
++  return (i + 1);
++}
++
++static guint64
++gst_matroska_parser_read_data (guint8 * p, gint64 len)
++{
++  guint64 data = 0;
++
++  if (!p || !len || (len > 8)) {
++    GST_ERROR ("param error, p = %p, len = %" G_GINT64_FORMAT, p, len);
++    return 0;
++  }
++
++  while (len--) {
++    data <<= 8;
++    data |= *p++;
++  }
++
++  return data;
++}
++
++static guint64
++gst_matroska_parser_read_data_len (guint8 * p_buf, guint64 len)
++{
++  guint64 data = 0;
++  guint8 *p8 = p_buf;
++
++  if (!p8 || !len || len > 8) {
++    GST_ERROR ("param error, p8 = %p , len = %" G_GUINT64_FORMAT, p8, len);
++    return 0;
++  }
++
++  data = *p8++;
++  data -= (guint64) 1 << (8 - len);
++  while (--len) {
++    data = (data << 8) | (*p8++);
++  }
++
++  return data;
++}
++
++static guint64
++gst_matroska_read_one_ebml_info (guint8 * buf, gint64 size,
++    GstMatroskaEbmlInfo * p_info)
++{
++  gint64 len = 0;
++  gint64 bytes = 0;
++  guint64 rem_size = 0;
++  guint8 *p8 = NULL;
++  guint64 unknown_length[8] = { 0x7F, 0x3FFF, 0x1FFFFF,
++    0x0FFFFFFF, 0x07FFFFFFFFLL, 0x03FFFFFFFFFFLL,
++    0x01FFFFFFFFFFFFLL, 0x00FFFFFFFFFFFFFFLL
++  };
++
++  if (!buf || !size || !p_info) {
++    GST_MATROSKA_PARSER_DEBUG
++        ("read ebml info, buf: %p, size: %" G_GINT64_FORMAT ", p_info: %p",
++        buf, size, p_info);
++    return 0;
++  }
++
++  rem_size = size;
++  p8 = buf;
++
++  /* extract id field */
++  len = gst_matroska_parser_read_len (*p8);
++  if ((rem_size <= len) || (len > 8)) {
++    if (len > 8) {
++      GST_ERROR ("id field error, size = %" G_GUINT64_FORMAT, len);
++    }
++    return 0;
++  } else {
++    p_info->id = gst_matroska_parser_read_data (p8, len);
++    p8 += len;
++    bytes += len;
++    rem_size -= len;
++  }
++
++  /* extract size field */
++  len = gst_matroska_parser_read_len (*p8);
++  if ((rem_size <= len) || (len > 8)) {
++    if (len > 8) {
++      GST_ERROR ("data size field error, size = %" G_GUINT64_FORMAT ", id = 0x%x", len,
++          p_info->id);
++    }
++    return 0;
++  } else {
++    p_info->size = gst_matroska_parser_read_data_len (p8, len);
++  }
++  /* check unknown length */
++  if (unknown_length[len - 1] == p_info->size) {
++    p_info->size = 0x7FFFFFFFFFFFFFFFULL;
++  }
++  p8 += len;
++  bytes += len;
++  rem_size -= len;
++
++  /* extract data field */
++  p_info->data_buf = p8;
++  p_info->data_offset = (gint64) (p8 - buf);
++  bytes += p_info->size;
++
++  return bytes;
++}
++
++static GstMatroskaParserResult
++gst_matroska_parser_check_id (GstMatroskaParser * parser, guint64 id,
++    guint32 len, GstAdapter * adapter)
++{
++  GstMatroskaParserResult res = GST_MATROSKA_PARSER_OK;
++  guint64 avail = gst_adapter_available (adapter);
++
++  /* Check buffer length */
++  if (avail < len) {
++    GST_MATROSKA_PARSER_DEBUG ("insufficient data, len = %" G_GUINT64_FORMAT, avail);
++    return GST_MATROSKA_PARSER_INSUFFICIENT_DATA;
++  }
++
++  /* Check id */
++  if (gst_matroska_parser_read_data ((guint8 *) gst_adapter_map (adapter, len),
++          len) != id) {
++    res = GST_MATROSKA_PARSER_NOT_SUPPORTED;
++  }
++
++  gst_adapter_unmap (adapter);
++  return res;
++}
++
++static GstMatroskaParserResult
++gst_matroska_parser_extract_data (GstMatroskaParser * parser,
++    GstAdapter * adapter)
++{
++  GstMatroskaPointData point_data;
++  GstMatroskaEbmlInfo embl_info;
++  guint64 consume = 0;
++  guint64 offset = parser->offset;
++  GstMatroskaPointData *entry = NULL;
++  GstMatroskaParserResult res = GST_MATROSKA_PARSER_OK;
++  guint64 len = 0;
++  guint8 *p_buf = 0;
++
++  INITIALIZE_DEBUG_CATEGORY;
++  len = gst_adapter_available (adapter);
++  p_buf = (guint8 *) gst_adapter_map (adapter, len);
++  while (TRUE) {
++    /* Read one ebml */
++    consume = gst_matroska_read_one_ebml_info (p_buf + offset, len, &embl_info);
++
++    /* Adjust some element type to parse sub element information */
++    if (consume) {
++      if ((embl_info.id == GST_MATROSKA_ID_SEGMENT) ||
++          (embl_info.id == GST_MATROSKA_ID_CUES) ||
++          (embl_info.id == GST_MATROSKA_ID_CLUSTER)) {
++        if (consume > embl_info.size) {
++          consume -= embl_info.size;
++        }
++      }
++    }
++
++    /* Check data integrity */
++    if (!consume || (len < consume)) {
++      if (offset) {
++        parser->offset = offset;
++      }
++      gst_adapter_unmap (adapter);
++
++      GST_MATROSKA_PARSER_DEBUG
++          ("insufficient data, offset = %" G_GUINT64_FORMAT
++              ", remain len = %" G_GUINT64_FORMAT
++              ", consume = %" G_GUINT64_FORMAT,
++          offset, len, consume);
++      return GST_MATROSKA_PARSER_OK;
++    }
++
++    /* Get current cue to fill array list */
++    if (parser->array && parser->cue_point_num) {
++      entry = &g_array_index (parser->array,
++          GstMatroskaPointData, (parser->cue_point_num - 1));
++    }
++
++    switch (embl_info.id) {
++      case GST_EBML_ID_HEADER:
++      {
++        GST_MATROSKA_PARSER_DEBUG ("id: embl header, size = %" G_GUINT64_FORMAT,
++            embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_SEGMENT:
++      {
++        parser->segment_offset = parser->consume;
++        /* update consume, need to parse childs id */
++        consume = embl_info.data_offset;
++        GST_MATROSKA_PARSER_DEBUG ("id: segment, size = %" G_GUINT64_FORMAT, embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_SEEKHEAD:
++      {
++        parser->segment_head_offset = parser->consume;
++        GST_MATROSKA_PARSER_DEBUG
++            ("id: segment seek head, offset = %" G_GUINT64_FORMAT ", size = %" G_GUINT64_FORMAT,
++            parser->segment_head_offset, embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_SEGMENTINFO:
++      {
++        /* update consume, need to parse childs id */
++        consume = embl_info.data_offset;
++        GST_MATROSKA_PARSER_DEBUG ("id: segment information, size = %" G_GUINT64_FORMAT,
++            embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_TIMECODESCALE:
++      {
++        parser->time_scale =
++            gst_matroska_parser_read_data (embl_info.data_buf, embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_DURATION:
++      {
++        parser->duration =
++            gst_matroska_parser_read_data (embl_info.data_buf, embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_CUES:
++      {
++        /* update consume, need to parse childs id */
++        consume = embl_info.data_offset;
++        parser->len = parser->consume + consume + embl_info.size;
++        break;
++      }
++      case GST_MATROSKA_ID_POINTENTRY:
++      {
++        if (!parser->array) {
++          parser->array =
++              g_array_new (FALSE, TRUE, sizeof (GstMatroskaPointData));
++        }
++
++        memset (&point_data, 0, sizeof (GstMatroskaPointData));
++        g_array_append_val (parser->array, point_data);
++        parser->cue_point_num++;
++        /* need to parse childs id */
++        consume = embl_info.data_offset;
++        GST_MATROSKA_PARSER_DEBUG ("id: cue point, num = %" G_GUINT64_FORMAT ", size = %" G_GUINT64_FORMAT,
++            parser->cue_point_num, embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_CUETIME:
++      {
++        if (entry) {
++          entry->cue_time =
++              gst_matroska_parser_read_data (embl_info.data_buf,
++              embl_info.size);
++        }
++        break;
++      }
++      case GST_MATROSKA_ID_CUETRACKPOSITION:
++      {
++        /* need to parse childs id */
++        consume = embl_info.data_offset;
++        GST_MATROSKA_PARSER_DEBUG ("id: track position, num = %" G_GUINT64_FORMAT ", size = %" G_GUINT64_FORMAT,
++            parser->cue_point_num, embl_info.size);
++        break;
++      }
++      case GST_MATROSKA_ID_CUECLUSTERPOSITION:
++      {
++        if (entry) {
++          entry->track_pos.cluster_pos =
++              gst_matroska_parser_read_data (embl_info.data_buf,
++              embl_info.size);
++        }
++        break;
++      }
++      case GST_MATROSKA_ID_CUETRACK:
++      {
++        if (entry) {
++          entry->track_pos.track =
++              gst_matroska_parser_read_data (embl_info.data_buf,
++              embl_info.size);
++        }
++        break;
++      }
++      case GST_MATROSKA_ID_CLUSTER:
++      {
++        GST_MATROSKA_PARSER_DEBUG ("id: cluster, offset = %" G_GUINT64_FORMAT,
++            parser->consume);
++        gst_adapter_unmap (adapter);
++        return GST_MATROSKA_PARSER_DONE;
++      }
++      default:
++      {
++        GST_MATROSKA_PARSER_DEBUG
++            ("unhandled id = 0x%x, size = %" G_GUINT64_FORMAT
++                ", data_offset = %" G_GUINT64_FORMAT
++                ", conume = %" G_GUINT64_FORMAT,
++            embl_info.id, embl_info.size, embl_info.data_offset,
++            parser->consume);
++        break;
++      }
++    }
++    len -= consume;
++    offset += consume;
++    parser->consume += consume;
++
++    /* Get all cues information */
++    if (parser->len) {
++      if (parser->consume >= parser->len) {
++        parser->offset = offset;
++        GST_MATROSKA_PARSER_DEBUG
++            ("get all cues data, offset in adapter = %" G_GUINT64_FORMAT
++            ", conume = %" G_GUINT64_FORMAT ", len = %" G_GUINT64_FORMAT,
++            parser->offset, parser->consume, parser->len);
++        res = GST_MATROSKA_PARSER_DONE;
++        break;
++      }
++    }
++  }
++
++  gst_adapter_unmap (adapter);
++  return res;
++}
++
++GstMatroskaParserResult
++gst_matroska_parser_entry (GstMatroskaParser * parser, GstAdapter * adapter)
++{
++  GstMatroskaParserResult res = GST_MATROSKA_PARSER_OK;
++
++  INITIALIZE_DEBUG_CATEGORY;
++  if (!parser || !adapter) {
++    GST_MATROSKA_PARSER_DEBUG ("gst_matroska_parser_entry: error param");
++    return GST_MATROSKA_PARSER_NOT_SUPPORTED;
++  }
++
++  switch (parser->status) {
++    case GST_MATROSKA_PARSER_STATUS_INIT:
++    {
++      gst_matroska_parser_init (parser);
++      parser->status = GST_MATROSKA_PARSER_STATUS_HEADER;
++    }
++    case GST_MATROSKA_PARSER_STATUS_HEADER:
++    {
++      res =
++          gst_matroska_parser_check_id (parser, GST_EBML_ID_HEADER, 4, adapter);
++      if (res != GST_MATROSKA_PARSER_OK) {
++        return res;
++      }
++      parser->status = GST_MATROSKA_PARSER_STATUS_DATA;
++    }
++    case GST_MATROSKA_PARSER_STATUS_DATA:
++    {
++      res = gst_matroska_parser_extract_data (parser, adapter);
++      if (res != GST_MATROSKA_PARSER_DONE) {
++        return res;
++      }
++      parser->status = GST_MATROSKA_PARSER_STATUS_FINISHED;
++    }
++    case GST_MATROSKA_PARSER_STATUS_FINISHED:
++      break;
++    default:
++      break;
++  }
++  return res;
++}
+diff --git a/gst-libs/gst/matroska/gstmatroska.h b/gst-libs/gst/matroska/gstmatroska.h
+new file mode 100755
+index 0000000..ac8c855
+--- /dev/null
++++ b/gst-libs/gst/matroska/gstmatroska.h
+@@ -0,0 +1,104 @@
++/* GStreamer
++ * Copyright 2021-2022 NXP
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
++ * Boston, MA 02110-1301, USA.
++ */
++#ifndef __GST_MATROSKA_H__
++#define __GST_MATROSKA_H__
++#include <gst/gst.h>
++#include <gst/gstinfo.h>
++#include <gst/base/gstadapter.h>
++
++G_BEGIN_DECLS
++#ifndef GST_MATROSKA_API
++# ifdef BUILDING_GST_MATROSKA
++#  define GST_MATROSKA_API GST_API_EXPORT       /* from config.h */
++# else
++#  define GST_MATROSKA_API GST_API_IMPORT
++# endif
++#endif
++    typedef struct
++{
++  guint32 id;
++  guint64 size;
++  gint64 data_offset;
++  guint8 *data_buf;
++} GstMatroskaEbmlInfo;
++
++typedef enum
++{
++  GST_MATROSKA_PARSER_OK,
++  GST_MATROSKA_PARSER_DONE,
++  GST_MATROSKA_PARSER_NOT_SUPPORTED,
++  GST_MATROSKA_PARSER_ERROR_PARAM,
++  GST_MATROSKA_PARSER_INSUFFICIENT_DATA,
++  GST_MATROSKA_PARSER_ERROR
++} GstMatroskaParserResult;
++
++typedef enum
++{
++  GST_MATROSKA_PARSER_STATUS_INIT,
++  GST_MATROSKA_PARSER_STATUS_HEADER,
++  GST_MATROSKA_PARSER_STATUS_DATA,
++  GST_MATROSKA_PARSER_STATUS_FINISHED
++} GstMatroskaParserStatus;
++
++typedef struct
++{
++  guint64 track;
++  guint64 cluster_pos;
++} GstMatroskaTrackPosType;
++
++typedef struct
++{
++  guint64 cue_time;
++  GstMatroskaTrackPosType track_pos;
++} GstMatroskaPointData;
++
++typedef struct _GstMatroskaParser
++{
++  /* total length before first cluster */
++  guint64 len;
++  /* segment offset */
++  guint64 segment_offset;
++  /* cluster address = segment_head_offset + cue cluster position */
++  guint64 segment_head_offset;
++  /* unit of time scale is nanosecond */
++  guint64 time_scale;
++  guint64 duration;
++  /* parsed length in adapter */
++  guint64 offset;
++  /* current consume length */
++  guint64 consume;
++  /* number of cue point */
++  guint64 cue_point_num;
++  /* cue point data list */
++  GArray *array;
++  GstMatroskaParserStatus status;
++  gboolean is_discard_ebml_header;
++  guint64 total_length;
++} GstMatroskaParser;
++
++GST_MATROSKA_API void gst_matroska_parser_init (GstMatroskaParser * parser);
++
++GST_MATROSKA_API void gst_matroska_parser_clear (GstMatroskaParser * parser);
++
++GST_MATROSKA_API
++    GstMatroskaParserResult gst_matroska_parser_entry (GstMatroskaParser *
++    parser, GstAdapter * adapter);
++
++G_END_DECLS
++#endif /* __GST_MATROSKA_H__ */
+diff --git a/gst-libs/gst/matroska/meson.build b/gst-libs/gst/matroska/meson.build
+new file mode 100755
+index 0000000..71e717b
+--- /dev/null
++++ b/gst-libs/gst/matroska/meson.build
+@@ -0,0 +1,22 @@
++matroska_sources = [
++  'gstmatroska.c',
++]
++matroska_headers = [
++  'gstmatroska.h',
++]
++install_headers(matroska_headers, subdir : 'gstreamer-1.0/gst/matroska')
++
++gstmatroska = library('gstmatroska-' + api_version,
++  matroska_sources,
++  c_args : gst_plugins_bad_args + ['-DGST_USE_UNSTABLE_API', '-DBUILDING_GST_MATROSKA', '-DG_LOG_DOMAIN="GStreamer-MATROSKA"'],
++  include_directories : [configinc, libsinc],
++  version : libversion,
++  soversion : soversion,
++  darwin_versions : osxversion,
++  install : true,
++  dependencies : [gstbase_dep],
++)
++
++gstmatroska_dep = declare_dependency(link_with : gstmatroska,
++  include_directories : [libsinc],
++  dependencies : [gstbase_dep])
+diff --git a/gst-libs/gst/meson.build b/gst-libs/gst/meson.build
+index 6207f33..23f7979 100644
+--- a/gst-libs/gst/meson.build
++++ b/gst-libs/gst/meson.build
+@@ -25,3 +25,5 @@ subdir('wayland')
+ subdir('webrtc')
+ subdir('winrt')
+ subdir('analytics')
++subdir('matroska')
++
+-- 
+2.43.0
+

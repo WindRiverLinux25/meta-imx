@@ -1,0 +1,110 @@
+From e1ba6a8edbe88e1a1133f26f0aca9b46383d01d3 Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@freescale.com>
+Date: Fri, 29 May 2015 09:54:56 +0800
+Subject: [PATCH 02/68] modifiy the videoparse rank
+
+- Modify the videparsers rank down to avoid link them in
+. h263parse rank down to 63
+. mpegvideoparse rank down to 63
+. mpeg4videpparse rank down to 63
+. pngparse, rank down to 63
+. h265parse rank down to 63
+
+Upstream-Status: Pending
+
+Signed-off-by: Lyon Wang <lyon.wang@freescale.com>
+
+[vidoeparse] Roll-back h264parse rank
+
+Roll back the h264parse rank.
+MMFMWK-7012
+For SW video decoder, it only support aligment au,
+But in GST1.6, rtph264depay output aligment nal format video.
+Need link h264parse to convert it to au alginment,
+make the sw decodear work
+
+Set h265parse to GST_RANK_PRIMARY + 1,(similar reason as 264parse)
+
+http://sw-jira.freescale.net/browse/MMFMWK-7012
+Upstream Status:  [i.MX specific]
+
+Signed-off-by: Lyon Wang <lyon.wang@freescale.com>
+
+(cherry picked from commit 809447e926dc1a5a1e7c7489e40df4d49e8c4b36)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/videoparsers/gsth263parse.c       | 2 +-
+ gst/videoparsers/gsth265parse.c       | 2 +-
+ gst/videoparsers/gstmpeg4videoparse.c | 2 +-
+ gst/videoparsers/gstmpegvideoparse.c  | 2 +-
+ gst/videoparsers/gstpngparse.c        | 2 +-
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/gst/videoparsers/gsth263parse.c b/gst/videoparsers/gsth263parse.c
+index d2c1e49..02e9071 100644
+--- a/gst/videoparsers/gsth263parse.c
++++ b/gst/videoparsers/gsth263parse.c
+@@ -55,7 +55,7 @@ GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
+ #define parent_class gst_h263_parse_parent_class
+ G_DEFINE_TYPE (GstH263Parse, gst_h263_parse, GST_TYPE_BASE_PARSE);
+ GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (h263parse, "h263parse",
+-    GST_RANK_PRIMARY + 1, GST_TYPE_H263_PARSE,
++    GST_RANK_MARGINAL - 1, GST_TYPE_H263_PARSE,
+     videoparsers_element_init (plugin));
+ 
+ static gboolean gst_h263_parse_start (GstBaseParse * parse);
+diff --git a/gst/videoparsers/gsth265parse.c b/gst/videoparsers/gsth265parse.c
+index 8406da4..5b18e61 100644
+--- a/gst/videoparsers/gsth265parse.c
++++ b/gst/videoparsers/gsth265parse.c
+@@ -93,7 +93,7 @@ static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src",
+ #define parent_class gst_h265_parse_parent_class
+ G_DEFINE_TYPE (GstH265Parse, gst_h265_parse, GST_TYPE_BASE_PARSE);
+ GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (h265parse, "h265parse",
+-    GST_RANK_SECONDARY, GST_TYPE_H265_PARSE,
++    GST_RANK_PRIMARY + 1, GST_TYPE_H265_PARSE,
+     videoparsers_element_init (plugin));
+ 
+ static void gst_h265_parse_finalize (GObject * object);
+diff --git a/gst/videoparsers/gstmpeg4videoparse.c b/gst/videoparsers/gstmpeg4videoparse.c
+index 1214a26..cd6d6e4 100644
+--- a/gst/videoparsers/gstmpeg4videoparse.c
++++ b/gst/videoparsers/gstmpeg4videoparse.c
+@@ -73,7 +73,7 @@ enum
+ #define gst_mpeg4vparse_parent_class parent_class
+ G_DEFINE_TYPE (GstMpeg4VParse, gst_mpeg4vparse, GST_TYPE_BASE_PARSE);
+ GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (mpeg4videoparse, "mpeg4videoparse",
+-    GST_RANK_PRIMARY + 1, GST_TYPE_MPEG4VIDEO_PARSE,
++    GST_RANK_MARGINAL - 1, GST_TYPE_MPEG4VIDEO_PARSE,
+     videoparsers_element_init (plugin));
+ 
+ static gboolean gst_mpeg4vparse_start (GstBaseParse * parse);
+diff --git a/gst/videoparsers/gstmpegvideoparse.c b/gst/videoparsers/gstmpegvideoparse.c
+index bb09d02..849af54 100644
+--- a/gst/videoparsers/gstmpegvideoparse.c
++++ b/gst/videoparsers/gstmpegvideoparse.c
+@@ -66,7 +66,7 @@ enum
+ #define parent_class gst_mpegv_parse_parent_class
+ G_DEFINE_TYPE (GstMpegvParse, gst_mpegv_parse, GST_TYPE_BASE_PARSE);
+ GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (mpegvideoparse, "mpegvideoparse",
+-    GST_RANK_PRIMARY + 1, GST_TYPE_MPEGVIDEO_PARSE,
++    GST_RANK_MARGINAL - 1, GST_TYPE_MPEGVIDEO_PARSE,
+     videoparsers_element_init (plugin));
+ 
+ static gboolean gst_mpegv_parse_start (GstBaseParse * parse);
+diff --git a/gst/videoparsers/gstpngparse.c b/gst/videoparsers/gstpngparse.c
+index 81621d9..d6a1c80 100644
+--- a/gst/videoparsers/gstpngparse.c
++++ b/gst/videoparsers/gstpngparse.c
+@@ -48,7 +48,7 @@ GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
+ 
+ #define parent_class gst_png_parse_parent_class
+ G_DEFINE_TYPE (GstPngParse, gst_png_parse, GST_TYPE_BASE_PARSE);
+-GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (pngparse, "pngparse", GST_RANK_PRIMARY,
++GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (pngparse, "pngparse", GST_RANK_MARGINAL - 1,
+     GST_TYPE_PNG_PARSE, videoparsers_element_init (plugin));
+ 
+ static gboolean gst_png_parse_start (GstBaseParse * parse);
+-- 
+2.43.0
+

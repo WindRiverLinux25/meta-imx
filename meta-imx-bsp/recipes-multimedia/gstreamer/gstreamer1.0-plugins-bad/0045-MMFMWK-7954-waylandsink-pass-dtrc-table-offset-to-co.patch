@@ -1,0 +1,57 @@
+From 846f7fbe293a3d4e2fc8979138510a36e97f4425 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 5 Sep 2018 15:53:48 +0800
+Subject: [PATCH 45/68] MMFMWK-7954 waylandsink: pass dtrc table offset to
+ compositor
+
+we pass dtrc table offset to compositor when modifier is not LINEAR
+and phymem meta is valid
+
+Upstream-Status: Pending
+
+(cherry picked from commit 2d83c233451cec96aa2f013e700fb95bde3a9195)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwllinuxdmabuf.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/gst-libs/gst/wayland/gstwllinuxdmabuf.c b/gst-libs/gst/wayland/gstwllinuxdmabuf.c
+index dc9af10..1e0dc02 100644
+--- a/gst-libs/gst/wayland/gstwllinuxdmabuf.c
++++ b/gst-libs/gst/wayland/gstwllinuxdmabuf.c
+@@ -25,6 +25,7 @@
+ #endif
+ 
+ #include <gst/allocators/gstdmabufmeta.h>
++#include <gst/allocators/gstphymemmeta.h>
+ 
+ #include "gstwllinuxdmabuf.h"
+ 
+@@ -100,6 +101,7 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
+   gint64 timeout;
+   ConstructBufferData data;
+   GstDmabufMeta *dmabuf_meta;
++  GstPhyMemMeta *phymemmeta = NULL;
+ 
+   g_return_val_if_fail (gst_wl_display_check_format_for_dmabuf (display,
+           drm_info), NULL);
+@@ -192,6 +194,16 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
+     }
+   }
+ 
++  phymemmeta = GST_PHY_MEM_META_GET (buf);
++  if (modifier != 0 && phymemmeta) {
++    GST_DEBUG_OBJECT (display, "physical memory meta x_padding: %d y_padding: %d \
++          RFC luma offset: %d chroma offset: %d",
++          phymemmeta->x_padding, phymemmeta->y_padding, phymemmeta->rfc_luma_offset, phymemmeta->rfc_chroma_offset);
++    zwp_linux_buffer_params_v1_add_dtrc_meta (params, phymemmeta->rfc_chroma_offset, phymemmeta->rfc_luma_offset);
++  } else {
++    zwp_linux_buffer_params_v1_add_dtrc_meta (params, 0, 0);
++  }
++
+   /* Request buffer creation */
+   zwp_linux_buffer_params_v1_add_listener (params, &params_listener, &data);
+   zwp_linux_buffer_params_v1_create (params, width, height, fourcc, flags);
+-- 
+2.43.0
+

@@ -13,6 +13,7 @@ Upstream-Status: Inappropriate [OE-specific]
 Signed-off-by: Andrey Zhizhikin <andrey.z@gmail.com>
 Signed-off-by: Jose Quaresma <quaresma.jose@gmail.com>
 
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
 ---
  ext/opencv/meson.build | 3 +++
  1 file changed, 3 insertions(+)

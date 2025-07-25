@@ -1,0 +1,272 @@
+From a49126f2cfcd0f050cc0d45094d03a1bcfe2d69a Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 12 Oct 2020 19:00:23 +0800
+Subject: [PATCH 33/68] waylandsink: support HDR10 video playback
+
+transfor to use HDR metadata in caps
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c            | 100 ++++++++++++++++++++++++
+ gst-libs/gst/wayland/gstwldisplay.c     |  16 ++++
+ gst-libs/gst/wayland/gstwldisplay.h     |   3 +
+ gst-libs/gst/wayland/gstwlvideoformat.c |   7 ++
+ gst-libs/gst/wayland/meson.build        |   1 +
+ 5 files changed, 127 insertions(+)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index f5428f4..b8abf42 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -47,6 +47,9 @@
+ #include <drm_fourcc.h>
+ #include <gst/allocators/allocators.h>
+ #include <gst/video/videooverlay.h>
++#include <linux/version.h>
++
++#include "hdr10-metadata-unstable-v1-client-protocol.h"
+ 
+ /* signals */
+ enum
+@@ -98,6 +101,8 @@ static gboolean
+ gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query);
+ static GstFlowReturn gst_wayland_sink_show_frame (GstVideoSink * vsink,
+     GstBuffer * buffer);
++static void
++gst_wayland_sink_config_hdr10 (GstWaylandSink * self, const GstCaps * caps);
+ 
+ /* VideoOverlay interface */
+ static void gst_wayland_sink_videooverlay_init (GstVideoOverlayInterface *
+@@ -515,6 +520,7 @@ gst_wayland_sink_change_state (GstElement * element, GstStateChange transition)
+       break;
+     case GST_STATE_CHANGE_PAUSED_TO_READY:
+       gst_buffer_replace (&self->last_buffer, NULL);
++      gst_wayland_sink_config_hdr10 (self, NULL);
+       if (self->window) {
+         area_surface = gst_wl_window_get_area_surface (self->window);
+         render_rectangle_w = gst_wl_window_get_rectangle_w (self->window);
+@@ -655,6 +661,16 @@ gst_wayland_sink_get_caps (GstBaseSink * bsink, GstCaps * filter)
+       }
+     }
+ 
++    /** FIXME:work around for 10bit format not in the none capsfeature list
++     * need vpu add memory:DMABuf capsfeature when output dmabuf
++    */
++    if (HAS_DCSS ()) {
++      g_value_init (&value, G_TYPE_STRING);
++      g_value_set_static_string (&value,
++          gst_video_format_to_string (GST_VIDEO_FORMAT_NV12_10LE40));
++      gst_value_list_append_and_take_value (&shm_list, &value);
++    }
++
+     gst_structure_take_value (gst_caps_get_structure (caps, 0), "format",
+         &shm_list);
+ 
+@@ -828,6 +844,8 @@ gst_wayland_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
+   /* Will be used to create buffer pools */
+   gst_caps_replace (&self->caps, caps);
+ 
++  gst_wayland_sink_config_hdr10 (self, caps);
++
+   return TRUE;
+ 
+ invalid_format:
+@@ -927,6 +945,88 @@ on_window_closed (GstWlWindow * window, gpointer user_data)
+       ("Output window was closed"), (NULL));
+ }
+ 
++static void
++gst_wayland_sink_config_hdr10 (GstWaylandSink * self, const GstCaps * caps)
++{
++  GstWlDisplay *display = self->display;
++  struct zwp_hdr10_metadata_v1 *hdr10_metadata;
++  struct wl_display *display_display;
++  guint32 eotf = 0;
++  guint32 type = 0;
++  guint32 display_primaries_red = 0;
++  guint32 display_primaries_green = 0;
++  guint32 display_primaries_blue = 0;
++  guint32 white_point = 0;
++  guint32 mastering_display_luminance = 0;
++  guint32 max_cll = 0;
++  guint32 max_fall = 0;
++
++  /* buf could be NULL when resize */
++
++  if (caps) {
++    GstVideoMasteringDisplayInfo minfo;
++    GstVideoContentLightLevel cll;
++    if (!gst_video_mastering_display_info_from_caps (&minfo, caps)
++        || !gst_video_content_light_level_from_caps (&cll, caps)) {
++      GST_INFO_OBJECT (self, "no HDR metadata present in caps");
++      return;
++    }
++
++    GST_INFO_OBJECT (self, "redPrimary x=%d y=%d", minfo.display_primaries[0].x,
++        minfo.display_primaries[0].y);
++    GST_INFO_OBJECT (self, "greenPrimary x=%d y=%d",
++        minfo.display_primaries[1].x, minfo.display_primaries[1].y);
++    GST_INFO_OBJECT (self, "bluePrimary x=%d y=%d",
++        minfo.display_primaries[2].x, minfo.display_primaries[2].y);
++    GST_INFO_OBJECT (self, "whitePoint x=%d y=%d", minfo.white_point.x,
++        minfo.white_point.y);
++    GST_INFO_OBJECT (self, "maxMasteringLuminance %d",
++        minfo.max_display_mastering_luminance);
++    GST_INFO_OBJECT (self, "minMasteringLuminance %d",
++        minfo.min_display_mastering_luminance);
++    GST_INFO_OBJECT (self, "maxContentLightLevel %d",
++        cll.max_content_light_level);
++    GST_INFO_OBJECT (self, "maxFrameAverageLightLevel %d",
++        cll.max_frame_average_light_level);
++
++    eotf = SMPTE_ST2084;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
++    type = 0;
++#else
++    type = 1;
++#endif
++    display_primaries_red =
++        (guint) (minfo.display_primaries[0].x << 16 | minfo.
++        display_primaries[0].y);
++    display_primaries_green =
++        (guint) (minfo.display_primaries[1].x << 16 | minfo.
++        display_primaries[1].y);
++    display_primaries_blue =
++        (guint) (minfo.display_primaries[2].x << 16 | minfo.
++        display_primaries[2].y);
++    white_point = (guint) (minfo.white_point.x << 16 | minfo.white_point.y);
++    mastering_display_luminance =
++        (guint) (((minfo.max_display_mastering_luminance /
++                10000) & 0xffff) << 16 | (minfo.min_display_mastering_luminance
++            & 0xffff));
++    max_cll = cll.max_content_light_level;
++    max_fall = cll.max_frame_average_light_level;
++  }
++
++  hdr10_metadata = gst_wl_display_get_hdr10_metadata (display);
++  display_display = gst_wl_display_get_display (display);
++  if (hdr10_metadata) {
++    zwp_hdr10_metadata_v1_set_metadata (hdr10_metadata,
++        eotf,
++        type,
++        display_primaries_red,
++        display_primaries_green,
++        display_primaries_blue,
++        white_point, mastering_display_luminance, max_cll, max_fall);
++    wl_display_roundtrip (display_display);
++  }
++}
++
+ static GstFlowReturn
+ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
+ {
+diff --git a/gst-libs/gst/wayland/gstwldisplay.c b/gst-libs/gst/wayland/gstwldisplay.c
+index 5a7054b..cd4c33b 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.c
++++ b/gst-libs/gst/wayland/gstwldisplay.c
+@@ -30,6 +30,7 @@
+ #include "viewporter-client-protocol.h"
+ #include "xdg-shell-client-protocol.h"
+ #include "alpha-compositing-unstable-v1-client-protocol.h"
++#include "hdr10-metadata-unstable-v1-client-protocol.h"
+ 
+ #include <errno.h>
+ #include <drm_fourcc.h>
+@@ -59,6 +60,7 @@ typedef struct _GstWlDisplayPrivate
+   struct wp_viewporter *viewporter;
+   struct zwp_linux_dmabuf_v1 *dmabuf;
+   struct zwp_alpha_compositing_v1 *alpha_compositing;
++  struct zwp_hdr10_metadata_v1 *hdr10_metadata;
+   GArray *shm_formats;
+   GArray *dmabuf_formats;
+   GArray *dmabuf_modifiers;
+@@ -181,6 +183,9 @@ gst_wl_display_finalize (GObject * gobject)
+   if (priv->subcompositor)
+     wl_subcompositor_destroy (priv->subcompositor);
+ 
++  if (priv->hdr10_metadata)
++    zwp_hdr10_metadata_v1_destroy (priv->hdr10_metadata);
++
+   if (priv->registry)
+     wl_registry_destroy (priv->registry);
+ 
+@@ -437,6 +442,9 @@ registry_handle_global (void *data, struct wl_registry *registry,
+   } else if (g_strcmp0 (interface, "zwp_alpha_compositing_v1") == 0) {
+     priv->alpha_compositing =
+         wl_registry_bind (registry, id, &zwp_alpha_compositing_v1_interface, 1);
++  } else if (g_strcmp0 (interface, "zwp_hdr10_metadata_v1") == 0) {
++    priv->hdr10_metadata =
++        wl_registry_bind (registry, id, &zwp_hdr10_metadata_v1_interface, 1);
+   } else if (g_strcmp0 (interface, "wl_output") == 0) {
+     priv->output =
+ 	wl_registry_bind (registry, id, &wl_output_interface, MIN (version, 2));
+@@ -774,6 +782,14 @@ gst_wl_display_get_touch (GstWlDisplay * self)
+   return priv->touch;
+ }
+ 
++struct zwp_hdr10_metadata_v1 *
++gst_wl_display_get_hdr10_metadata (GstWlDisplay * self)
++{
++  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
++
++  return priv->hdr10_metadata;
++}
++
+ gint
+ gst_wl_display_get_width (GstWlDisplay * self)
+ {
+diff --git a/gst-libs/gst/wayland/gstwldisplay.h b/gst-libs/gst/wayland/gstwldisplay.h
+index 9eae9f8..6c16405 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.h
++++ b/gst-libs/gst/wayland/gstwldisplay.h
+@@ -103,6 +103,9 @@ struct wl_pointer *gst_wl_display_get_pointer (GstWlDisplay * self);
+ GST_WL_API
+ struct wl_touch *gst_wl_display_get_touch (GstWlDisplay * self);
+ 
++GST_WL_API
++struct zwp_hdr10_metadata_v1 *gst_wl_display_get_hdr10_metadata (GstWlDisplay * self);
++
+ GST_WL_API
+ gint gst_wl_display_get_width (GstWlDisplay * self);
+ 
+diff --git a/gst-libs/gst/wayland/gstwlvideoformat.c b/gst-libs/gst/wayland/gstwlvideoformat.c
+index f58e463..ee42c81 100644
+--- a/gst-libs/gst/wayland/gstwlvideoformat.c
++++ b/gst-libs/gst/wayland/gstwlvideoformat.c
+@@ -28,6 +28,7 @@
+ #include "gstwlvideoformat.h"
+ 
+ #include <drm_fourcc.h>
++#include <linux/version.h>
+ 
+ /* This can be removed once we can bump the required wl_client_dep,
+  * which again is blocked by a CI image update, see
+@@ -94,6 +95,12 @@ static const wl_VideoFormat wl_formats[] = {
+   {WL_SHM_FORMAT_YVU420, DRM_FORMAT_YVU420, GST_VIDEO_FORMAT_YV12},
+   {WL_SHM_FORMAT_YUV422, DRM_FORMAT_YUV422, GST_VIDEO_FORMAT_Y42B},
+   {WL_SHM_FORMAT_YUV444, DRM_FORMAT_YUV444, GST_VIDEO_FORMAT_v308},
++  /*FIXME. no suitable format for shm when it is NV12 10bit */
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
++  {WL_SHM_FORMAT_NV12, DRM_FORMAT_P010, GST_VIDEO_FORMAT_NV12_10LE40},
++#else
++  {WL_SHM_FORMAT_NV12, DRM_FORMAT_NV15, GST_VIDEO_FORMAT_NV12_10LE40},
++#endif
+ };
+ 
+ enum wl_shm_format
+diff --git a/gst-libs/gst/wayland/meson.build b/gst-libs/gst/wayland/meson.build
+index 0e181de..912d26e 100644
+--- a/gst-libs/gst/wayland/meson.build
++++ b/gst-libs/gst/wayland/meson.build
+@@ -44,6 +44,7 @@ if use_wayland
+     ['xdg-shell', 'stable', ],
+     ['single-pixel-buffer', 'staging', 'v1' ],
+     ['alpha-compositing', 'unstable', 'v1', ],
++    ['hdr10-metadata', 'unstable', 'v1', ],
+   ]
+   protocols_files = []
+ 
+-- 
+2.43.0
+

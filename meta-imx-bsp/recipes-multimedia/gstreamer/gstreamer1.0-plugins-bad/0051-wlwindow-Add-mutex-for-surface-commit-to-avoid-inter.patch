@@ -1,0 +1,89 @@
+From 649d6184d4834bcce7afe3db3974b4a113c0500a Mon Sep 17 00:00:00 2001
+From: Chao Guo <chao.guo@nxp.com>
+Date: Tue, 30 Apr 2024 18:14:20 +0900
+Subject: [PATCH 51/68] wlwindow: Add mutex for surface commit to avoid
+ interference between multi-threads
+
+When setting video rotation mode or video size during playback,
+there are multiple threads performing surface commit. Threads
+will affect each other, causing weston to report errors.
+
+Add a mutex commit_lock to protect surface commit tasks of different
+threads. When a thread commits a video surface, other threads must
+not commit this surface.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chao Guo <chao.guo@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlwindow.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index fc19c65..b18259d 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -95,6 +95,8 @@ typedef struct _GstWlWindowPrivate
+   struct wl_callback *frame_callback;
+   struct wl_callback *commit_callback;
+ 
++  GMutex commit_lock;
++
+   /* the coordinate of video crop */
+   gint src_x, src_y, src_width, src_height;
+ 
+@@ -395,6 +397,7 @@ gst_wl_window_init (GstWlWindow * self)
+   g_cond_init (&priv->redraw_wait);
+   g_mutex_init (&priv->configure_mutex);
+   g_mutex_init (&priv->window_lock);
++  g_mutex_init (&priv->commit_lock);
+ 
+   priv->src_x = 0;
+   priv->src_y = 0;
+@@ -426,6 +429,7 @@ gst_wl_window_finalize (GObject * gobject)
+   g_cond_clear (&priv->redraw_wait);
+   g_mutex_clear (&priv->configure_mutex);
+   g_mutex_clear (&priv->window_lock);
++  g_mutex_clear (&priv->commit_lock);
+ 
+   if (priv->xdg_toplevel)
+     xdg_toplevel_destroy (priv->xdg_toplevel);
+@@ -903,6 +907,7 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+     gst_wl_window_set_opaque (self, info);
+   }
+ 
++  g_mutex_lock (&priv->commit_lock);
+   if (G_LIKELY (buffer)) {
+     current_gstbuffer = gst_wl_buffer_get_current_gstbuffer (buffer);
+     used_by_compositor = gst_wl_buffer_get_used_by_compositor (buffer);
+@@ -951,6 +956,7 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+     priv->next_video_info = NULL;
+   }
+ 
++  g_mutex_unlock (&priv->commit_lock);
+ }
+ 
+ static void
+@@ -1104,14 +1110,17 @@ gst_wl_window_update_geometry (GstWlWindow * self)
+     return;
+ 
+   if (priv->scaled_width != 0) {
++    g_mutex_lock (&priv->commit_lock);
+     wl_subsurface_set_sync (priv->video_subsurface);
+     gst_wl_window_resize_video_surface (self, TRUE);
+   }
+ 
+   wl_surface_commit (priv->area_surface_wrapper);
+ 
+-  if (priv->scaled_width != 0)
++  if (priv->scaled_width != 0) {
+     wl_subsurface_set_desync (priv->video_subsurface);
++    g_mutex_unlock (&priv->commit_lock);
++  }
+ }
+ 
+ void
+-- 
+2.43.0
+

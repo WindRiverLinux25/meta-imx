@@ -1,0 +1,28 @@
+From 0ff33a9d74e360ff9d29c18198924c1a1610c773 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 22 Apr 2024 14:32:48 +0800
+Subject: [PATCH 49/68] MMFMWK-9362 waylandsink: correct fps calculation
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index f134222..6b9b126 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -1398,7 +1398,8 @@ dst_map_failed:
+   }
+ done:
+   {
+-    self->frame_showed++;
++    if (ret == GST_FLOW_OK)
++      self->frame_showed++;
+     g_mutex_unlock (&self->render_lock);
+     return ret;
+   }
+-- 
+2.43.0
+

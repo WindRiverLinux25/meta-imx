@@ -1,0 +1,468 @@
+From e3958737af61e7fb8cfe971e449b50c85f6525b9 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 5 Jul 2018 19:03:48 +0800
+Subject: [PATCH 29/68] MMFMWK-7954 waylandsink: apply surface buffer scale for
+ 850D
+
+get real display solution using wl_output interface. Compare it
+with desktop size to decide which scale to use. defaultly, make
+scale = 1 for compitable purpose.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwldisplay.c |  69 +++++++++++++
+ gst-libs/gst/wayland/gstwldisplay.h |   6 ++
+ gst-libs/gst/wayland/gstwlutils.c   | 144 ++++++++++++++++++++++++++++
+ gst-libs/gst/wayland/gstwlutils.h   |  31 ++++++
+ gst-libs/gst/wayland/gstwlwindow.c  |  28 ++++--
+ gst-libs/gst/wayland/meson.build    |   2 +
+ 6 files changed, 274 insertions(+), 6 deletions(-)
+ create mode 100644 gst-libs/gst/wayland/gstwlutils.c
+ create mode 100644 gst-libs/gst/wayland/gstwlutils.h
+
+diff --git a/gst-libs/gst/wayland/gstwldisplay.c b/gst-libs/gst/wayland/gstwldisplay.c
+index 67d262e..8ea20da 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.c
++++ b/gst-libs/gst/wayland/gstwldisplay.c
+@@ -52,6 +52,7 @@ typedef struct _GstWlDisplayPrivate
+   struct zwp_fullscreen_shell_v1 *fullscreen_shell;
+   struct wp_single_pixel_buffer_manager_v1 *single_pixel_buffer;
+   struct wl_shm *shm;
++  struct wl_output *output;
+   struct wp_viewporter *viewporter;
+   struct zwp_linux_dmabuf_v1 *dmabuf;
+   struct zwp_alpha_compositing_v1 *alpha_compositing;
+@@ -59,6 +60,9 @@ typedef struct _GstWlDisplayPrivate
+   GArray *dmabuf_formats;
+   GArray *dmabuf_modifiers;
+ 
++  /* real display resolution */
++  gint width, height;
++
+   /* private */
+   gboolean own_display;
+   GThread *thread;
+@@ -96,6 +100,8 @@ gst_wl_display_init (GstWlDisplay * self)
+   priv->dmabuf_modifiers = g_array_new (FALSE, FALSE, sizeof (guint64));
+   priv->wl_fd_poll = gst_poll_new (TRUE);
+   priv->buffers = g_hash_table_new (g_direct_hash, g_direct_equal);
++  priv->width = -1;
++  priv->height = -1;
+   g_mutex_init (&priv->buffers_mutex);
+   g_rec_mutex_init (&priv->sync_mutex);
+ 
+@@ -309,6 +315,50 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+   handle_xdg_wm_base_ping
+ };
+ 
++output_handle_geometry (void *data, struct wl_output *wl_output,
++    int32_t x, int32_t y,
++    int32_t physical_width, int32_t physical_height,
++    int32_t subpixel,
++    const char *make, const char *model, int32_t output_transform)
++{
++  /* Nothing to do now */
++}
++
++static void
++output_handle_mode (void *data, struct wl_output *wl_output,
++    uint32_t flags, int32_t width, int32_t height, int32_t refresh)
++{
++  GstWlDisplay *self = data;
++  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
++
++  /* we only care about the current mode */
++  if (flags & WL_OUTPUT_MODE_CURRENT) {
++    priv->width = width;
++    priv->height = height;
++  }
++}
++
++static void
++output_handle_done (void *data, struct wl_output *wl_output)
++{
++  /* don't bother waiting for this; there's no good reason a
++   * compositor will wait more than one roundtrip before sending
++   * these initial events. */
++}
++
++static void
++output_handle_scale (void *data, struct wl_output *wl_output, int32_t scale)
++{
++  /* Nothing to do now */
++}
++
++static const struct wl_output_listener output_listener = {
++  output_handle_geometry,
++  output_handle_mode,
++  output_handle_done,
++  output_handle_scale,
++};
++
+ static void
+ registry_handle_global (void *data, struct wl_registry *registry,
+     uint32_t id, const char *interface, uint32_t version)
+@@ -346,6 +396,10 @@ registry_handle_global (void *data, struct wl_registry *registry,
+   } else if (g_strcmp0 (interface, "zwp_alpha_compositing_v1") == 0) {
+     priv->alpha_compositing =
+         wl_registry_bind (registry, id, &zwp_alpha_compositing_v1_interface, 1);
++  } else if (g_strcmp0 (interface, "wl_output") == 0) {
++    priv->output =
++	wl_registry_bind (registry, id, &wl_output_interface, MIN (version, 2));
++    wl_output_add_listener (priv->output, &output_listener, self);
+   }
+ }
+ 
+@@ -656,6 +710,21 @@ gst_wl_display_get_alpha_compositing (GstWlDisplay * self)
+   return priv->alpha_compositing;
+ }
+ 
++gint
++gst_wl_display_get_width (GstWlDisplay * self)
++{
++  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
++
++  return priv->width;
++}
++
++gint
++gst_wl_display_get_height (GstWlDisplay * self)
++{
++  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
++
++  return priv->height;
++}
+ struct wl_shm *
+ gst_wl_display_get_shm (GstWlDisplay * self)
+ {
+diff --git a/gst-libs/gst/wayland/gstwldisplay.h b/gst-libs/gst/wayland/gstwldisplay.h
+index 8d74c62..6c5eda7 100644
+--- a/gst-libs/gst/wayland/gstwldisplay.h
++++ b/gst-libs/gst/wayland/gstwldisplay.h
+@@ -94,6 +94,12 @@ struct wp_viewporter *gst_wl_display_get_viewporter (GstWlDisplay * self);
+ GST_WL_API
+ struct zwp_alpha_compositing_v1 *gst_wl_display_get_alpha_compositing (GstWlDisplay * self);
+ 
++GST_WL_API
++gint gst_wl_display_get_width (GstWlDisplay * self);
++
++GST_WL_API
++gint gst_wl_display_get_height (GstWlDisplay * self);
++
+ GST_WL_API
+ struct wl_shm *gst_wl_display_get_shm (GstWlDisplay * self);
+ 
+diff --git a/gst-libs/gst/wayland/gstwlutils.c b/gst-libs/gst/wayland/gstwlutils.c
+new file mode 100644
+index 0000000..7c556a8
+--- /dev/null
++++ b/gst-libs/gst/wayland/gstwlutils.c
+@@ -0,0 +1,144 @@
++/* GStreamer Wayland video sink
++ *
++ * Copyright 2018 NXP
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the Free
++ * Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ */
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include <stdlib.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <unistd.h>
++#include <math.h>
++#include <fcntl.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <ctype.h>
++
++#include "gstwlutils.h"
++
++#define WESTON_INI "/etc/xdg/weston/weston.ini"
++
++gboolean
++gst_wl_init_buffer_scale (gint display_width, gint display_height,
++    guint * scale)
++{
++  gchar path[] = WESTON_INI;
++  gchar line[512], *p, *section = NULL, *size = NULL;
++  gint fd, n, i;
++  gint desktop_width, desktop_height;
++  gboolean found_config = FALSE;
++  gboolean ret = TRUE;
++  struct stat filestat;
++  FILE *fp;
++
++  if ((fd = open (path, O_RDONLY)) == -1) {
++    return FALSE;
++  }
++
++  if (fstat (fd, &filestat) < 0 || !S_ISREG (filestat.st_mode)) {
++    close (fd);
++    return FALSE;
++  }
++
++  fp = fdopen (fd, "r");
++  if (fp == NULL) {
++    close (fd);
++    return FALSE;
++  }
++
++  while (fgets (line, sizeof line, fp)) {
++    if (found_config)
++      break;
++
++    switch (line[0]) {
++      case '#':
++      case '\n':
++        continue;
++      case '[':
++        p = strchr (&line[1], ']');
++        if (!p || p[1] != '\n') {
++          continue;
++        }
++        p[0] = '\0';
++        if (section)
++          g_free (section);
++        section = g_strdup (&line[1]);
++        continue;
++      default:
++        if (section && strcmp (section, "shell") == 0) {
++          p = strchr (line, '=');
++          if (!p || p == line) {
++            continue;
++          }
++
++          p[0] = '\0';
++          if (strcmp (&line[0], "size") == 0) {
++            p++;
++            while (isspace (*p))
++              p++;
++            i = strlen (p);
++            while (i > 0 && isspace (p[i - 1])) {
++              p[i - 1] = '\0';
++              i--;
++            }
++            if (strlen (p) > 0) {
++              if (size)
++                g_free (size);
++              size = g_strdup (p);
++              found_config = TRUE;
++            }
++          }
++        }
++        continue;
++    }
++  }
++
++  if (found_config && size) {
++    n = sscanf (size, "%dx%d\n", &desktop_width, &desktop_height);
++    if (n != 2) {
++      ret = FALSE;
++      goto out;
++    }
++  } else {
++    ret = FALSE;
++    goto out;
++  }
++
++  /* FIXME: only support buffer scale 2 and 1 */
++  if (display_width > 0 && display_height > 0) {
++    *scale = display_width / desktop_width;
++    if (*scale != 1 && *scale != 2) {
++      *scale = 1;
++    }
++  } else {
++    ret = FALSE;
++    goto out;
++  }
++
++out:
++  if (section)
++    g_free (section);
++  if (size)
++    g_free (size);
++  fclose (fp);
++  return ret;
++}
+diff --git a/gst-libs/gst/wayland/gstwlutils.h b/gst-libs/gst/wayland/gstwlutils.h
+new file mode 100644
+index 0000000..285dcae
+--- /dev/null
++++ b/gst-libs/gst/wayland/gstwlutils.h
+@@ -0,0 +1,31 @@
++/* GStreamer Wayland video sink
++ *
++ * Copyright 2018 NXP
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Library General Public License for more details.
++ *
++ * You should have received a copy of the GNU Library General Public
++ * License along with this library; if not, write to the Free
++ * Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ */
++
++#ifndef __GST_WL_UTILS_H__
++#define __GST_WL_UTILS_H__
++
++#include <gst/gst.h>
++
++G_BEGIN_DECLS
++
++gboolean gst_wl_init_buffer_scale(gint display_width, gint display_height, guint * scale);
++G_END_DECLS
++
++#endif
+\ No newline at end of file
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index 4a0a9c8..e522ed8 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -25,6 +25,7 @@
+ #endif
+ 
+ #include "gstwlwindow.h"
++#include "gstwlutils.h"
+ #include "gstimxcommon.h"
+ 
+ #include "fullscreen-shell-unstable-v1-client-protocol.h"
+@@ -88,6 +89,9 @@ typedef struct _GstWlWindowPrivate
+ 
+   /* the coordinate of video crop */
+   gint src_x, src_y, src_width, src_height;
++
++  /* video buffer scale */
++  guint scale;
+ } GstWlWindowPrivate;
+ 
+ G_DEFINE_TYPE_WITH_CODE (GstWlWindow, gst_wl_window, G_TYPE_OBJECT,
+@@ -198,6 +202,7 @@ gst_wl_window_init (GstWlWindow * self)
+   priv->src_y = 0;
+   priv->src_width = -1;
+   priv->src_height = 0;
++  priv->scale = 1;
+ }
+ 
+ static void
+@@ -256,6 +261,7 @@ gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
+   struct wl_region *region;
+   struct wp_viewporter *viewporter;
+   struct zwp_alpha_compositing_v1 *alpha_compositing;
++  gint width, height;
+ 
+   self = g_object_new (GST_TYPE_WL_WINDOW, NULL);
+   priv = gst_wl_window_get_instance_private (self);
+@@ -301,6 +307,12 @@ gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
+   wl_surface_set_input_region (priv->video_surface, region);
+   wl_region_destroy (region);
+ 
++  width = gst_wl_display_get_width (display);
++  height = gst_wl_display_get_height (display);
++  if (!gst_wl_init_buffer_scale (width, height, &priv->scale)) {
++    GST_WARNING ("init buffer scale fail, fallback to scale=%d", priv->scale);
++  }
++
+   return self;
+ }
+ 
+@@ -391,7 +403,8 @@ gst_wl_window_new_toplevel (GstWlDisplay * display, const GstVideoInfo * info,
+     /* set the initial size to be the same as the reported video size */
+     gint width =
+         gst_util_uint64_scale_int_round (info->width, info->par_n, info->par_d);
+-    gst_wl_window_set_render_rectangle (self, 0, 0, width, info->height);
++    gst_wl_window_set_render_rectangle (self, 0, 0, width / priv->scale,
++        info->height / priv->scale);
+   }
+ 
+   return self;
+@@ -516,10 +529,11 @@ gst_wl_window_resize_video_surface (GstWlWindow * self, gboolean commit)
+   int wp_src_width;
+   int wp_src_height;
+ 
+-  wl_fixed_t src_x = wl_fixed_from_int (priv->src_x);
+-  wl_fixed_t src_y = wl_fixed_from_int (priv->src_y);
+-  wl_fixed_t src_width = wl_fixed_from_int (priv->src_width);
+-  wl_fixed_t src_height = wl_fixed_from_int (priv->src_height);
++  wl_fixed_t src_x = wl_fixed_from_int (priv->src_x / priv->scale);
++  wl_fixed_t src_y = wl_fixed_from_int (priv->src_y / priv->scale);
++  wl_fixed_t src_width = wl_fixed_from_int (priv->src_width / priv->scale);
++  wl_fixed_t src_height =
++      wl_fixed_from_int (priv->src_height / priv->scale);
+ 
+   switch (priv->buffer_transform) {
+     case WL_OUTPUT_TRANSFORM_NORMAL:
+@@ -551,7 +565,7 @@ gst_wl_window_resize_video_surface (GstWlWindow * self, gboolean commit)
+   if (priv->video_viewport) {
+     gst_video_center_rect (&src, &dst, &res, TRUE);
+     wp_viewport_set_destination (priv->video_viewport, res.w, res.h);
+-    if (src_width != wl_fixed_from_int (-1))
++    if (src_width != wl_fixed_from_int (-1 / priv->scale))
+       wp_viewport_set_source (priv->video_viewport,
+           src_x, src_y, src_width, src_height);
+   } else {
+@@ -642,6 +656,7 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+     priv->frame_callback = callback;
+     wl_callback_add_listener (callback, &frame_callback_listener, self);
+     gst_wl_buffer_attach (buffer, priv->video_surface_wrapper);
++    wl_surface_set_buffer_scale (priv->video_surface_wrapper, priv->scale);
+     wl_surface_damage_buffer (priv->video_surface_wrapper, 0, 0, G_MAXINT32,
+         G_MAXINT32);
+     wl_surface_commit (priv->video_surface_wrapper);
+@@ -655,6 +670,7 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
+   } else {
+     /* clear both video and parent surfaces */
+     wl_surface_attach (priv->video_surface_wrapper, NULL, 0, 0);
++    wl_surface_set_buffer_scale (priv->video_surface_wrapper, priv->scale);
+     wl_surface_commit (priv->video_surface_wrapper);
+     wl_surface_attach (priv->area_surface_wrapper, NULL, 0, 0);
+     wl_surface_commit (priv->area_surface_wrapper);
+diff --git a/gst-libs/gst/wayland/meson.build b/gst-libs/gst/wayland/meson.build
+index cf6a0e2..0e181de 100644
+--- a/gst-libs/gst/wayland/meson.build
++++ b/gst-libs/gst/wayland/meson.build
+@@ -17,6 +17,7 @@ if use_wayland
+       'gstwlvideobufferpool.c',
+       'gstwlvideoformat.c',
+       'gstwlwindow.c',
++      'gstwlutils.c',
+   ])
+ 
+   wl_headers = files([
+@@ -29,6 +30,7 @@ if use_wayland
+       'gstwlvideobufferpool.h',
+       'gstwlvideoformat.h',
+       'gstwlwindow.h',
++      'gstwlutils.h',
+       'wayland.h',
+       'wayland-prelude.h',
+   ])
+-- 
+2.43.0
+

@@ -1,0 +1,55 @@
+From 19916daa1782513d445e4607f1694302594b3dd0 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Tue, 18 Aug 2020 23:28:22 +0800
+Subject: [PATCH 15/68] tinycompresssink: send one NULL buffer to drain buffer.
+
+Send one NULL buffer with 0 size to force driver send data to FW.
+
+Upstream-Status: Pending
+(cherry picked from commit 0455b850939b2b9d29c5bb20703d76150fbba0e7)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/tinycompress/tinycompresssink.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/sys/tinycompress/tinycompresssink.c b/sys/tinycompress/tinycompresssink.c
+index e09ad0a..6f3e744 100644
+--- a/sys/tinycompress/tinycompresssink.c
++++ b/sys/tinycompress/tinycompresssink.c
+@@ -50,7 +50,7 @@ GST_DEBUG_CATEGORY_STATIC (tinycompresssink_debug);
+ #define DEFAULT_MINREQ          -1
+ #define DEFAULT_MAXLENGTH       -1
+ #define DEFAULT_PREBUF          -1
+-#define DEFAULT_PROVIDE_CLOCK   TRUE
++#define DEFAULT_PROVIDE_CLOCK   FALSE
+ 
+ enum
+ {
+@@ -485,6 +485,9 @@ again:
+     }
+   }
+ 
++  /* Send evevy frame to FW when non-LPA */
++  if (!csink->enable_lpa)
++    compress_write(csink->compress, NULL, 0);
+ 
+   ret = GST_FLOW_OK;
+ 
+@@ -723,11 +726,13 @@ gst_tinycompresssink_wait_event (GstBaseSink * bsink, GstEvent * event)
+   switch (GST_EVENT_TYPE (event)) {
+     case GST_EVENT_EOS:
+       GST_DEBUG_OBJECT (csink, "Draining on EOS");
+-      compress_write(csink->compress, NULL, 1);
++      if (csink->enable_lpa)
++        compress_write(csink->compress, NULL, 0);
+       /* remove suspend as bitstream maybe returned before systen suspended*/
+       /*if (csink->enable_lpa)
+         system ("echo mem > /sys/power/state");*/
+       compress_drain(csink->compress);
++      GST_DEBUG_OBJECT (csink, "Draining done on EOS");
+       break;
+ 
+     default:
+-- 
+2.43.0
+

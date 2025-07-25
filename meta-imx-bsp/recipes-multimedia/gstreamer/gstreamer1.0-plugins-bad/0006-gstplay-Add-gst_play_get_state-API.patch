@@ -1,0 +1,66 @@
+From 03c535e236f34c106e2c06274a234062ae544016 Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@nxp.com>
+Date: Fri, 17 Feb 2017 17:22:31 +0800
+Subject: [PATCH 06/68] gstplay: Add gst_play_get_state() API
+
+- Add gst_play_get_state() API
+
+https://bugzilla.gnome.org/show_bug.cgi?id=778379
+Upstream-Status: Submitted
+
+Signed-off-by: Lyon Wang <lyon.wang@nxp.com>
+
+(cherry picked from commit 3b5ab8d6803371c8b3ea8a8804a6dbe58b477204)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/play/gstplay.c | 20 ++++++++++++++++++++
+ gst-libs/gst/play/gstplay.h |  2 ++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/gst-libs/gst/play/gstplay.c b/gst-libs/gst/play/gstplay.c
+index 357595c..de89b9a 100644
+--- a/gst-libs/gst/play/gstplay.c
++++ b/gst-libs/gst/play/gstplay.c
+@@ -4985,6 +4985,26 @@ gst_play_get_text_sink (GstPlay * self)
+   return actual_sink;
+ }
+ 
++/**
++ * gst_get_state:
++ * @play: #GstPlay instance
++ *
++ * Gets internal GstPlay state.
++ * It's not guaranteed that the state returned is the current state,
++ * it might've changed in the meantime.
++ *
++ * Returns: (transfer none): internal GstPlayState
++ *
++ * Since 1.12
++ */
++GstPlayState
++gst_play_get_state (GstPlay * self)
++{
++  g_return_val_if_fail (GST_IS_PLAY (self), GST_PLAY_STATE_STOPPED);
++
++  return self->app_state;
++}
++
+ /**
+  * gst_play_is_play_message:
+  * @msg: A #GstMessage
+diff --git a/gst-libs/gst/play/gstplay.h b/gst-libs/gst/play/gstplay.h
+index 7ee5c69..b688b3b 100644
+--- a/gst-libs/gst/play/gstplay.h
++++ b/gst-libs/gst/play/gstplay.h
+@@ -456,6 +456,8 @@ gboolean    gst_play_set_text_sink (GstPlay * play, GstElement * text_sink);
+ GstElement * gst_play_get_audio_sink (GstPlay * play);
+ GstElement * gst_play_get_text_sink (GstPlay * play);
+ 
++GstPlayState  gst_play_get_state (GstPlay * play);
++
+ G_END_DECLS
+ 
+ #endif /* __GST_PLAY_H__ */
+-- 
+2.43.0
+

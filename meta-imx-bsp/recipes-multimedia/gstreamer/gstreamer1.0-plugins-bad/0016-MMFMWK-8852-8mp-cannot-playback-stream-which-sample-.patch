@@ -1,0 +1,32 @@
+From e6b5d1b1c79d055800052f693179a28623a3cd36 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Thu, 27 Aug 2020 22:56:03 +0800
+Subject: [PATCH 16/68] MMFMWK-8852 [8mp] cannot playback stream which sample
+ rate bigger then 48K with tinycompress
+
+LPA FW ASRC can't support sample rate bigger then 48K.
+
+Upstream-Status: Pending
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit 71d0351f9078fde6e2179fe179b30cba15550cec)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/tinycompress/tinycompresssink.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sys/tinycompress/tinycompresssink.h b/sys/tinycompress/tinycompresssink.h
+index 83c86a8..4d6ff85 100644
+--- a/sys/tinycompress/tinycompresssink.h
++++ b/sys/tinycompress/tinycompresssink.h
+@@ -44,7 +44,7 @@ G_BEGIN_DECLS
+ #define _TINYCOMPRESS_CAPS_PCM "audio/x-raw, " \
+       "format = (string) { S16LE, S32LE }, " \
+       "layout = (string) interleaved, " \
+-      "rate = (int) [ 8000, 192000 ], " \
++      "rate = (int) [ 8000, 48000 ], " \
+       "channels = (int) [ 1, 2 ]; "
+ #define _TINYCOMPRESS_CAPS_MP3 "audio/mpeg, mpegversion = (int) 1, " \
+       "mpegaudioversion = (int) [ 1, 3 ]; "
+-- 
+2.43.0
+

@@ -1,0 +1,186 @@
+From b1a12e3273d7a98cfea374110015ca6f781aec40 Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@nxp.com>
+Date: Thu, 16 Feb 2017 18:50:28 +0800
+Subject: [PATCH 07/68] gstplay: Add play/stop sync API
+
+- Add play/stop/pause sync API
+      gst_play_play_sync()
+      gst_play_stop_sync()
+      gst_play_pause_sync()
+
+https://bugzilla.gnome.org/show_bug.cgi?id=778390
+
+Upstream-Status: Pending
+
+Signed-off-by: Lyon Wang <lyon.wang@nxp.com>
+
+(cherry picked from commit e5493891f87de82214d6626e3753d15ae34af624)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/play/gstplay.c | 113 ++++++++++++++++++++++++++++++++++++
+ gst-libs/gst/play/gstplay.h |   4 ++
+ 2 files changed, 117 insertions(+)
+
+diff --git a/gst-libs/gst/play/gstplay.c b/gst-libs/gst/play/gstplay.c
+index de89b9a..0d417df 100644
+--- a/gst-libs/gst/play/gstplay.c
++++ b/gst-libs/gst/play/gstplay.c
+@@ -228,6 +228,10 @@ struct _GstPlay
+   gchar *audio_sid;
+   gchar *subtitle_sid;
+   gulong stream_notify_id;
++
++  /* When error occur, will set this flag to TRUE,
++   * so that it could quit for sync play/stop loop */
++  gboolean got_error;
+ };
+ 
+ struct _GstPlayClass
+@@ -330,6 +334,7 @@ gst_play_init (GstPlay * self)
+   self->seek_pending = FALSE;
+   self->seek_position = GST_CLOCK_TIME_NONE;
+   self->last_seek_time = GST_CLOCK_TIME_NONE;
++  self->got_error = FALSE;
+ 
+   self->cached_position = 0;
+   self->cached_duration = GST_CLOCK_TIME_NONE;
+@@ -1000,6 +1005,9 @@ on_error (GstPlay * self, GError * err, const GstStructure * details)
+         NULL);
+   }
+ #endif
++
++  self->got_error = TRUE;
++
+   api_bus_post_message (self, GST_PLAY_MESSAGE_ERROR,
+       GST_PLAY_MESSAGE_DATA_ERROR, G_TYPE_ERROR, err,
+       GST_PLAY_MESSAGE_DATA_ERROR_DETAILS, GST_TYPE_STRUCTURE,
+@@ -5005,6 +5013,111 @@ gst_play_get_state (GstPlay * self)
+   return self->app_state;
+ }
+ 
++/**
++ * gst_play_wait_state
++ * @play: #GstPlay instance
++ * @target_state: target state
++ * @time_out:  time out value
++ *  negtive (< 0): infinitely waiting for state change.
++ *  positive (>0): wait until time out.
++ *  zero (0), do not wait for the state change.
++ *
++ * Wait for target state, quit loop when time out
++ */
++static void
++gst_play_wait_state (GstPlay * self, GstPlayState target_state,
++    gint time_out)
++{
++  gint wait_cnt = 0;
++
++  while (time_out < 0 || wait_cnt < time_out * 20) {
++    if (self->app_state == target_state) {
++      break;
++    } else if (self->got_error == TRUE) {
++      self->got_error = FALSE;
++      return;
++    } else if (self->is_eos == TRUE) {
++      return;
++    } else {
++      wait_cnt++;
++      g_usleep (50000);
++    }
++  }
++  if (time_out > 0 && wait_cnt >= time_out * 20) {
++    on_error (self, g_error_new (GST_PLAY_ERROR,
++            GST_PLAY_ERROR_FAILED,
++            "try to play /stop /pause failed, time out"), NULL);
++  }
++
++  return;
++}
++
++/**
++ * gst_play_play_sync:
++ * @play: #GstPlay instance
++ * @time_out:  time out value
++ *  negtive (< 0): infinitely waiting for state change.
++ *  positive (>0): wait until time out.
++ *  zero (0), do not wait for the state change.
++ *
++ * Request to play the loaded stream in sync mode.
++ */
++void
++gst_play_play_sync (GstPlay * self, gint time_out)
++{
++  g_return_if_fail (GST_IS_PLAY (self));
++
++  gst_play_play (self);
++
++  gst_play_wait_state (self, GST_PLAY_STATE_PLAYING, time_out);
++
++  return;
++}
++
++/**
++ * gst_play_stop_sync:
++ * @play: #GstPlay instance
++ * @time_out:  time out value
++ *  negtive (< 0): infinitely waiting for state change.
++ *  positive (>0): wait until time out.
++ *  zero (0), do not wait for the state change.
++ *
++ *  Stops playing the current stream in sync mode.
++ */
++void
++gst_play_stop_sync (GstPlay * self, gint time_out)
++{
++  g_return_if_fail (GST_IS_PLAY (self));
++
++  gst_play_stop (self);
++
++  gst_play_wait_state (self, GST_PLAY_STATE_STOPPED, time_out);
++
++  return;
++}
++
++/**
++ * gst_play_pause_sync:
++ * @play: #GstPlay instance
++ * @time_out:  time out value
++ *  negtive (< 0): infinitely waiting for state change.
++ *  positive (>0): wait until time out.
++ *  zero (0), do not wait for the state change.
++ *
++ *  Pause current stream in sync mode.
++ */
++void
++gst_play_pause_sync (GstPlay * self, gint time_out)
++{
++  g_return_if_fail (GST_IS_PLAY (self));
++
++  gst_play_pause (self);
++
++  gst_play_wait_state (self, GST_PLAY_STATE_PAUSED, time_out);
++
++  return;
++}
++
+ /**
+  * gst_play_is_play_message:
+  * @msg: A #GstMessage
+diff --git a/gst-libs/gst/play/gstplay.h b/gst-libs/gst/play/gstplay.h
+index b688b3b..164376f 100644
+--- a/gst-libs/gst/play/gstplay.h
++++ b/gst-libs/gst/play/gstplay.h
+@@ -458,6 +458,10 @@ GstElement * gst_play_get_text_sink (GstPlay * play);
+ 
+ GstPlayState  gst_play_get_state (GstPlay * play);
+ 
++void         gst_play_play_sync (GstPlay * play, gint time_out);
++void         gst_play_stop_sync (GstPlay * play, gint time_out);
++void         gst_play_pause_sync (GstPlay * play, gint time_out);
++
+ G_END_DECLS
+ 
+ #endif /* __GST_PLAY_H__ */
+-- 
+2.43.0
+

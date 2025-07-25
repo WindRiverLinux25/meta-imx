@@ -1,0 +1,63 @@
+From 43ec97cf6888791780409606ccd6218a10399931 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 17 Dec 2020 10:03:06 +0800
+Subject: [PATCH 19/68] play: support set connection-speed property of playbin
+
+Add an API to support set connection-speed property of playbin
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/merge_requests/1889
+
+(cherry picked from commit 7c71a57d356750451b28047ddc71e23f8adfd37c)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/play/gstplay.c | 17 +++++++++++++++++
+ gst-libs/gst/play/gstplay.h |  4 ++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/gst-libs/gst/play/gstplay.c b/gst-libs/gst/play/gstplay.c
+index 7ca97f2..2c3de47 100644
+--- a/gst-libs/gst/play/gstplay.c
++++ b/gst-libs/gst/play/gstplay.c
+@@ -3875,6 +3875,23 @@ gst_play_set_visualization_enabled (GstPlay * self, gboolean enabled)
+       enabled ? "Enabled" : "Disabled");
+ }
+ 
++/**
++ * gst_play_set_connection_speed:
++ * @play: #GstPlay instance
++ * @connnection_speed: adaptive playback connection speed in kbps
++ *
++ * set adaptive playback connection speed.
++ */
++gboolean
++gst_play_set_connection_speed (GstPlay * self, guint connnection_speed)
++{
++  g_return_val_if_fail (GST_IS_PLAY (self), 0);
++
++  g_object_set (G_OBJECT (self->playbin), "connection-speed", connnection_speed,
++      NULL);
++  return TRUE;
++}
++
+ struct CBChannelMap
+ {
+   const gchar *label;           /* channel label name */
+diff --git a/gst-libs/gst/play/gstplay.h b/gst-libs/gst/play/gstplay.h
+index 831e4c9..238917c 100644
+--- a/gst-libs/gst/play/gstplay.h
++++ b/gst-libs/gst/play/gstplay.h
+@@ -285,6 +285,10 @@ GST_PLAY_API
+ gboolean     gst_play_set_subtitle_track            (GstPlay    *play,
+                                                      gint stream_index);
+ 
++GST_PLAY_API
++gboolean     gst_play_set_connection_speed          (GstPlay    *play,
++                                                     guint connnection_speed);
++
+ GST_PLAY_API
+ GstPlayMediaInfo *    gst_play_get_media_info     (GstPlay * play);
+ 
+-- 
+2.43.0
+

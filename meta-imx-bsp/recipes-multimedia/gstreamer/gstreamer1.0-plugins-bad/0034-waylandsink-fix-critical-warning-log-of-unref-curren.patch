@@ -1,0 +1,39 @@
+From 32a6496777ed28901abf5ec6233c7066a3014e09 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 28 Oct 2020 19:10:26 +0800
+Subject: [PATCH 34/68] waylandsink: fix critical warning log of unref
+ current_gstbuffer
+
+After change to cache GstMemory, if the GstMemory key moves from
+one GstBuffer to another when this wlbuffer still used by compositor,
+need to use gst_buffer_replace to change this pointer. Because we didn't
+increase the new gstbuffer's refcount in attach(), and we will lost
+the previous gstbuffer.
+
+Upstream-Status: Pending
+
+(cherry picked from commit 42fe40332f8bfff83587243119250aa21674fad8)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/wayland/gstwlbuffer.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/wayland/gstwlbuffer.c b/gst-libs/gst/wayland/gstwlbuffer.c
+index 988c7b6..684fae9 100644
+--- a/gst-libs/gst/wayland/gstwlbuffer.c
++++ b/gst-libs/gst/wayland/gstwlbuffer.c
+@@ -223,7 +223,10 @@ gst_buffer_get_wl_buffer (GstWlDisplay * display, GstBuffer * gstbuffer)
+   if (wlbuf) {
+     GstWlBufferPrivate *priv = gst_wl_buffer_get_instance_private (wlbuf);
+ 
+-    priv->current_gstbuffer = gstbuffer;
++    if (priv->used_by_compositor)
++      gst_buffer_replace (&priv->current_gstbuffer, gstbuffer);
++    else
++      priv->current_gstbuffer = gstbuffer;
+   }
+ 
+   return wlbuf;
+-- 
+2.43.0
+

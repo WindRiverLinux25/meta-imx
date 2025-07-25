@@ -1,0 +1,178 @@
+From 9a1fa462dac3ef393eab5d0df3d24d86805bb7a2 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 23 Dec 2020 19:59:39 +0800
+Subject: [PATCH 21/68] dashdemux: create stream collection and push downstream
+
+create stream collection info and push it downstream via
+gstevent
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/merge_requests/1904
+
+(cherry picked from commit 094ab8fd063c8998fe0dd8d609797db99744b674)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/dash/gstdashdemux.c | 13 ++++++++
+ ext/dash/gstmpdclient.c | 67 +++++++++++++++++++++++++++++++++++++++++
+ ext/dash/gstmpdclient.h |  1 +
+ ext/dash/gstmpdhelper.c | 17 +++++++++++
+ ext/dash/gstmpdhelper.h |  1 +
+ 5 files changed, 99 insertions(+)
+
+diff --git a/ext/dash/gstdashdemux.c b/ext/dash/gstdashdemux.c
+index fbd709d..5471b83 100644
+--- a/ext/dash/gstdashdemux.c
++++ b/ext/dash/gstdashdemux.c
+@@ -933,6 +933,19 @@ gst_dash_demux_setup_all_streams (GstDashDemux * demux)
+           gst_dash_demux_send_content_protection_event, stream);
+     }
+ 
++    if (active_stream->cur_adapt_set) {
++      GstStreamCollection *collection = NULL;
++      collection =
++          gst_mpd_client_get_stream_collection (demux->client,
++          active_stream->cur_adapt_set);
++      if (collection) {
++        GstEvent *event = NULL;
++        event = gst_event_new_stream_collection (collection);
++        gst_adaptive_demux_stream_queue_event ((GstAdaptiveDemuxStream *)
++            stream, event);
++      }
++    }
++
+     gst_isoff_sidx_parser_init (&stream->sidx_parser);
+   }
+ 
+diff --git a/ext/dash/gstmpdclient.c b/ext/dash/gstmpdclient.c
+index c4a12c0..b5179da 100644
+--- a/ext/dash/gstmpdclient.c
++++ b/ext/dash/gstmpdclient.c
+@@ -2726,6 +2726,73 @@ gst_mpd_client_active_stream_contains_subtitles (GstActiveStream * stream)
+       || (rep_codecs && g_str_has_prefix (rep_codecs, "stpp"));
+ }
+ 
++GstStreamCollection *
++gst_mpd_client_get_stream_collection (GstMPDClient * client,
++    GstMPDAdaptationSetNode * adapt_set)
++{
++  GList *list = NULL;
++  GstMPDRepresentationBaseNode *base_rep = NULL;
++  GstMPDRepresentationNode *rep = NULL;
++  GstStreamCollection *collection = NULL;
++  const gchar *caps_mime;
++
++  if (adapt_set == NULL)
++    return NULL;
++
++  collection = gst_stream_collection_new (NULL);
++
++  for (list = g_list_first (adapt_set->Representations); list;
++      list = g_list_next (list)) {
++    GstStream *stream = NULL;
++    GstCaps *caps = NULL;
++    GstStreamType type = GST_STREAM_TYPE_UNKNOWN;
++    gchar *caps_string = NULL;
++
++    base_rep = GST_MPD_REPRESENTATION_BASE_NODE (list->data);
++    rep = (GstMPDRepresentationNode *) list->data;
++    caps_mime = gst_mpd_helper_mimetype_to_caps (base_rep->mimeType);
++    type = gst_mpd_helper_mimetype_to_stream_type (base_rep->mimeType);
++
++    switch (type) {
++      case GST_STREAM_TYPE_VIDEO:
++        caps_string =
++            g_strdup_printf ("%s,width=%u,height=%u,bitrate=%u", caps_mime,
++            base_rep->width, base_rep->height, rep->bandwidth);
++        break;
++      case GST_STREAM_TYPE_AUDIO:
++        /* fixme: add channel configure */
++        caps_string =
++            g_strdup_printf ("%s,rate=%s", caps_mime,
++            base_rep->audioSamplingRate);
++        break;
++      case GST_STREAM_TYPE_TEXT:
++        caps_string = g_strdup_printf ("%s", caps_mime);
++        break;
++      case GST_STREAM_TYPE_UNKNOWN:
++      case GST_STREAM_TYPE_CONTAINER:
++        GST_DEBUG_OBJECT (client, "meet not support stream type");
++        break;
++    }
++
++    if (caps_string) {
++      caps = gst_caps_from_string (caps_string);
++      g_free (caps_string);
++    }
++
++    if (!caps) {
++      gst_object_unref (collection);
++      return NULL;
++    }
++
++    stream = gst_stream_new (rep->id, caps, type, GST_STREAM_FLAG_NONE);
++    gst_stream_collection_add_stream (collection, stream);
++
++    gst_caps_unref (caps);
++  }
++
++  return collection;
++}
++
+ GstCaps *
+ gst_mpd_client_get_stream_caps (GstActiveStream * stream)
+ {
+diff --git a/ext/dash/gstmpdclient.h b/ext/dash/gstmpdclient.h
+index 0809cbf..f35ddac 100644
+--- a/ext/dash/gstmpdclient.h
++++ b/ext/dash/gstmpdclient.h
+@@ -126,6 +126,7 @@ void gst_mpd_client_seek_to_first_segment (GstMPDClient * client);
+ GstDateTime *gst_mpd_client_get_next_segment_availability_start_time (GstMPDClient * client, GstActiveStream * stream);
+ 
+ /* Get audio/video stream parameters (caps, width, height, rate, number of channels) */
++GstStreamCollection * gst_mpd_client_get_stream_collection (GstMPDClient * client, GstMPDAdaptationSetNode * adapt_set);
+ GstCaps * gst_mpd_client_get_stream_caps (GstActiveStream * stream);
+ gboolean gst_mpd_client_get_bitstream_switching_flag (GstActiveStream * stream);
+ guint gst_mpd_client_get_video_stream_width (GstActiveStream * stream);
+diff --git a/ext/dash/gstmpdhelper.c b/ext/dash/gstmpdhelper.c
+index a66de89..26c78ba 100644
+--- a/ext/dash/gstmpdhelper.c
++++ b/ext/dash/gstmpdhelper.c
+@@ -78,6 +78,23 @@ gst_mpd_helper_get_SAP_type (xmlNode * a_node,
+   return exists;
+ }
+ 
++GstStreamType
++gst_mpd_helper_mimetype_to_stream_type (const gchar * mimeType)
++{
++  if (mimeType == NULL)
++    return GST_STREAM_TYPE_UNKNOWN;
++  if (strcmp (mimeType, "video/mp2t") == 0) {
++    return GST_STREAM_TYPE_VIDEO;
++  } else if (strcmp (mimeType, "video/mp4") == 0) {
++    return GST_STREAM_TYPE_VIDEO;
++  } else if (strcmp (mimeType, "audio/mp4") == 0) {
++    return GST_STREAM_TYPE_AUDIO;
++  } else if (strcmp (mimeType, "text/vtt") == 0) {
++    return GST_STREAM_TYPE_TEXT;
++  } else
++    return GST_STREAM_TYPE_UNKNOWN;
++}
++
+ const gchar *
+ gst_mpd_helper_mimetype_to_caps (const gchar * mimeType)
+ {
+diff --git a/ext/dash/gstmpdhelper.h b/ext/dash/gstmpdhelper.h
+index 95eaec9..2c09ab1 100644
+--- a/ext/dash/gstmpdhelper.h
++++ b/ext/dash/gstmpdhelper.h
+@@ -60,6 +60,7 @@ typedef enum
+ gboolean gst_mpd_helper_get_mpd_type (xmlNode * a_node, const gchar * property_name, GstMPDFileType * property_value);
+ gboolean gst_mpd_helper_get_SAP_type (xmlNode * a_node, const gchar * property_name, GstMPDSAPType * property_value);
+ 
++GstStreamType gst_mpd_helper_mimetype_to_stream_type (const gchar * mimeType);
+ const gchar * gst_mpd_helper_mimetype_to_caps (const gchar * mimeType);
+ GstUri *gst_mpd_helper_combine_urls (GstUri * base, GList * list, gchar ** query, guint idx);
+ int gst_mpd_helper_strncmp_ext (const char *s1, const char *s2);
+-- 
+2.43.0
+

@@ -1,0 +1,74 @@
+From 19cbb2e6d0c67b4c6748e029cd434ee60cf1ef5f Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 28 Mar 2024 14:17:01 +0800
+Subject: [PATCH 47/68] Revert "jpegparse: pass colorimetry in caps"
+
+imx-jpeg driver only supports below colorimetry when try_fmt,
+which can be transformed to gst mapping 1:4:7:1. If jpegparse
+adds colorimetry=sRGB to caps, it causes negotiation failure
+between jpegparse and v4l2h264dec for this pipeline
+"video/x-raw,format=BGR ! v4l2jpegenc ! jpegparse ! v4l2jpegdec"
+
+	pix_mp->colorspace = V4L2_COLORSPACE_SRGB;
+	pix_mp->ycbcr_enc = V4L2_YCBCR_ENC_601;
+	pix_mp->xfer_func = V4L2_XFER_FUNC_SRGB;
+	pix_mp->quantization = V4L2_QUANTIZATION_FULL_RANGE;
+
+This reverts commit 75a3e0b52ae4ecf62faeed7a46415edd5e8c61f4.
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/jpegformat/gstjpegparse.c | 9 ---------
+ gst/jpegformat/gstjpegparse.h | 1 -
+ 2 files changed, 10 deletions(-)
+
+diff --git a/gst/jpegformat/gstjpegparse.c b/gst/jpegformat/gstjpegparse.c
+index 1dda8c5..7a79d4b 100644
+--- a/gst/jpegformat/gstjpegparse.c
++++ b/gst/jpegformat/gstjpegparse.c
+@@ -247,9 +247,6 @@ gst_jpeg_parse_set_sink_caps (GstBaseParse * bparse, GstCaps * caps)
+       parse->field_order = gst_video_field_order_from_string (field_order);
+   }
+ 
+-  g_clear_pointer (&parse->colorimetry, g_free);
+-  parse->colorimetry = g_strdup (gst_structure_get_string (s, "colorimetry"));
+-
+   return TRUE;
+ }
+ 
+@@ -763,11 +760,6 @@ gst_jpeg_parse_set_new_caps (GstJpegParse * parse)
+         sampling_to_string (parse->sampling), NULL);
+   }
+ 
+-  if (parse->colorimetry) {
+-    gst_caps_set_simple (caps, "colorimetry", G_TYPE_STRING, parse->colorimetry,
+-        NULL);
+-  }
+-
+   gst_caps_set_simple (caps, "interlace-mode", G_TYPE_STRING,
+       gst_video_interlace_mode_to_string (parse->interlace_mode), NULL);
+ 
+@@ -1037,7 +1029,6 @@ gst_jpeg_parse_stop (GstBaseParse * bparse)
+   }
+   gst_clear_buffer (&parse->codec_data);
+   gst_clear_caps (&parse->prev_caps);
+-  g_clear_pointer (&parse->colorimetry, g_free);
+ 
+   return TRUE;
+ }
+diff --git a/gst/jpegformat/gstjpegparse.h b/gst/jpegformat/gstjpegparse.h
+index d6a88fd..20ef6e9 100644
+--- a/gst/jpegformat/gstjpegparse.h
++++ b/gst/jpegformat/gstjpegparse.h
+@@ -64,7 +64,6 @@ struct _GstJpegParse {
+   gint orig_width, orig_height;
+ 
+   GstBuffer *codec_data;
+-  char *colorimetry;
+   GstVideoInterlaceMode interlace_mode;
+   GstVideoFieldOrder field_order;
+   guint field;
+-- 
+2.43.0
+

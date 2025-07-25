@@ -1,0 +1,133 @@
+From 41eaa92afee4b4078e4f3f7f387b98ec647a9e0f Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Fri, 8 Jun 2018 16:52:44 +0800
+Subject: [PATCH 27/68] MMFMWK-8030 waylandsink: support video crop meta using
+ viewporter protocol
+
+use API wp_viewport_set_source() to support video crop meta handle
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=796541
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/wayland/gstwaylandsink.c       |  3 +++
+ gst-libs/gst/wayland/gstwlwindow.c | 38 +++++++++++++++++++++++++++---
+ gst-libs/gst/wayland/gstwlwindow.h |  3 +++
+ 3 files changed, 41 insertions(+), 3 deletions(-)
+
+diff --git a/ext/wayland/gstwaylandsink.c b/ext/wayland/gstwaylandsink.c
+index 64734b7..10b1035 100644
+--- a/ext/wayland/gstwaylandsink.c
++++ b/ext/wayland/gstwaylandsink.c
+@@ -841,6 +841,7 @@ gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
+   alloc = gst_shm_allocator_get ();
+   gst_query_add_allocation_param (query, alloc, NULL);
+   gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
++  gst_query_add_allocation_meta (query, GST_VIDEO_CROP_META_API_TYPE, NULL);
+   g_object_unref (alloc);
+ 
+   return TRUE;
+@@ -909,6 +910,8 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
+   if (G_UNLIKELY (gst_wl_window_get_render_rectangle (self->window)->w == 0))
+     goto no_window_size;
+ 
++  gst_wl_window_set_source_crop (self->window, buffer);
++
+   wlbuffer = gst_buffer_get_wl_buffer (self->display, buffer);
+ 
+   if (G_LIKELY (wlbuffer &&
+diff --git a/gst-libs/gst/wayland/gstwlwindow.c b/gst-libs/gst/wayland/gstwlwindow.c
+index 27084c0..12bdd72 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.c
++++ b/gst-libs/gst/wayland/gstwlwindow.c
+@@ -80,6 +80,9 @@ typedef struct _GstWlWindowPrivate
+   gboolean clear_window;
+   struct wl_callback *frame_callback;
+   struct wl_callback *commit_callback;
++
++  /* the coordinate of video crop */
++  gint src_x, src_y, src_width, src_height;
+ } GstWlWindowPrivate;
+ 
+ G_DEFINE_TYPE_WITH_CODE (GstWlWindow, gst_wl_window, G_TYPE_OBJECT,
+@@ -185,6 +188,11 @@ gst_wl_window_init (GstWlWindow * self)
+   g_cond_init (&priv->configure_cond);
+   g_mutex_init (&priv->configure_mutex);
+   g_mutex_init (&priv->window_lock);
++
++  priv->src_x = 0;
++  priv->src_y = 0;
++  priv->src_width = -1;
++  priv->src_height = 0;
+ }
+ 
+ static void
+@@ -459,6 +467,11 @@ gst_wl_window_resize_video_surface (GstWlWindow * self, gboolean commit)
+   int wp_src_width;
+   int wp_src_height;
+ 
++  wl_fixed_t src_x = wl_fixed_from_int (priv->src_x);
++  wl_fixed_t src_y = wl_fixed_from_int (priv->src_y);
++  wl_fixed_t src_width = wl_fixed_from_int (priv->src_width);
++  wl_fixed_t src_height = wl_fixed_from_int (priv->src_height);
++
+   switch (priv->buffer_transform) {
+     case WL_OUTPUT_TRANSFORM_NORMAL:
+     case WL_OUTPUT_TRANSFORM_180:
+@@ -488,10 +501,10 @@ gst_wl_window_resize_video_surface (GstWlWindow * self, gboolean commit)
+   /* center the video_subsurface inside area_subsurface */
+   if (priv->video_viewport) {
+     gst_video_center_rect (&src, &dst, &res, TRUE);
+-    wp_viewport_set_source (priv->video_viewport, wl_fixed_from_int (0),
+-        wl_fixed_from_int (0), wl_fixed_from_int (wp_src_width),
+-        wl_fixed_from_int (wp_src_height));
+     wp_viewport_set_destination (priv->video_viewport, res.w, res.h);
++    if (src_width != wl_fixed_from_int(-1))
++      wp_viewport_set_source (priv->video_viewport,
++          src_x, src_y, src_width, src_height);
+   } else {
+     gst_video_center_rect (&src, &dst, &res, FALSE);
+   }
+@@ -786,6 +799,25 @@ gst_wl_window_set_render_rectangle (GstWlWindow * self, gint x, gint y,
+   gst_wl_window_update_geometry (self);
+ }
+ 
++void
++gst_wl_window_set_source_crop (GstWlWindow * self, GstBuffer * buffer)
++{
++  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
++  GstVideoCropMeta *crop = NULL;
++  crop = gst_buffer_get_video_crop_meta(buffer);
++
++  if (crop) {
++    GST_DEBUG ("buffer crop x=%d y=%d width=%d height=%d\n",
++        crop->x, crop->y, crop->width, crop->height);
++    priv->src_x = crop->x;
++    priv->src_y = crop->y;
++    priv->src_width = crop->width;
++    priv->src_height = crop->height;
++  } else {
++    priv->src_width = -1;
++  }
++}
++
+ const GstVideoRectangle *
+ gst_wl_window_get_render_rectangle (GstWlWindow * self)
+ {
+diff --git a/gst-libs/gst/wayland/gstwlwindow.h b/gst-libs/gst/wayland/gstwlwindow.h
+index 4cd85ac..f048230 100644
+--- a/gst-libs/gst/wayland/gstwlwindow.h
++++ b/gst-libs/gst/wayland/gstwlwindow.h
+@@ -67,6 +67,9 @@ GST_WL_API
+ void gst_wl_window_set_render_rectangle (GstWlWindow * self, gint x, gint y,
+         gint w, gint h);
+ 
++GST_WL_API
++void gst_wl_window_set_source_crop (GstWlWindow * self, GstBuffer * buffer);
++
+ GST_WL_API
+ const GstVideoRectangle *gst_wl_window_get_render_rectangle (GstWlWindow * self);
+ 
+-- 
+2.43.0
+
