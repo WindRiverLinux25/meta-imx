@@ -1,0 +1,44 @@
+From 6319c2b005aebd6a8cdb8945b0b9b550d14166c2 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 29 Apr 2024 15:04:54 +0800
+Subject: [PATCH 10/13] LF-12094 deviceprovider: Do not hide v4l2deviceprovider
+
+Upstream-Status: Pending
+
+Currently libcameraprovider hides "v4l2deviceprovider" to avoid devices
+being duplicated. When running "gst-gst-device-monitor-1.0 Video",
+device monitor probes device providers one by one and sends bus message
+to gst-device-monitor to print device information.
+
+There is one case that libcameraprovider and v4l2deviceprovider both
+exit, libcameraprovider fails to probe device while v4l2deviceprovider
+probes successfully. "gst-device-monitor Video" will show nothing as
+v4l2deviceprovider is hidden and the bus message it uses to convey
+device information is dropped.
+
+To fix this, temporarily make a workaround to unhide v4l2deviceprovider.
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/gstdeviceprovider.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/gst/gstdeviceprovider.c b/gst/gstdeviceprovider.c
+index 896721b..4bfd532 100644
+--- a/gst/gstdeviceprovider.c
++++ b/gst/gstdeviceprovider.c
+@@ -749,6 +749,11 @@ gst_device_provider_hide_provider (GstDeviceProvider * provider,
+   g_return_if_fail (GST_IS_DEVICE_PROVIDER (provider));
+   g_return_if_fail (name != NULL);
+ 
++  /* Workaround to unhide v4l2deviceprovider to avoid "gst-device-monitor-1.0 Video"
++   * fail when libcameraprovider is available. */
++  if (!strcmp (name, "v4l2deviceprovider"))
++    return;
++
+   GST_OBJECT_LOCK (provider);
+   find =
+       g_list_find_custom (provider->priv->hidden_providers, name,
+-- 
+2.49.0
+

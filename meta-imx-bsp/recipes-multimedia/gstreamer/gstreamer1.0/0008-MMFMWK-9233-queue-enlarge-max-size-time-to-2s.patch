@@ -1,0 +1,33 @@
+From 8a757aa899b7a2d75d8bd8f037999779598275f4 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 4 May 2023 16:13:16 +0800
+Subject: [PATCH 08/13] MMFMWK-9233 queue: enlarge max-size-time to 2s
+
+vpudec on 6Q drains output buffers after receiving eos, while playbin3
+sends eos event downstream only when all tracks reach eos. It may cause
+aqueue full before decodebin3 sends video eos event to videodecoder.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ plugins/elements/gstqueue.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/elements/gstqueue.c b/plugins/elements/gstqueue.c
+index b65da32..bf5633e 100644
+--- a/plugins/elements/gstqueue.c
++++ b/plugins/elements/gstqueue.c
+@@ -128,7 +128,7 @@ enum
+ /* default property values */
+ #define DEFAULT_MAX_SIZE_BUFFERS  200   /* 200 buffers */
+ #define DEFAULT_MAX_SIZE_BYTES    (10 * 1024 * 1024)    /* 10 MB       */
+-#define DEFAULT_MAX_SIZE_TIME     GST_SECOND    /* 1 second    */
++#define DEFAULT_MAX_SIZE_TIME     2 * GST_SECOND        /* 2 second    */
+ 
+ #define GST_QUEUE_MUTEX_LOCK(q) G_STMT_START {                          \
+   g_mutex_lock (&q->qlock);                                              \
+-- 
+2.49.0
+

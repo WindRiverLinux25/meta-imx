@@ -1,0 +1,47 @@
+From cc22dcd9e5825e36fcbc60d9520067b7ab02b0db Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Wed, 26 Apr 2023 18:09:03 +0800
+Subject: [PATCH 07/13] MMFMWK-9234 multiqueue: support query queue status
+
+demuxer can avoid waiting by querying current
+queue status when sending data.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ plugins/elements/gstmultiqueue.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/plugins/elements/gstmultiqueue.c b/plugins/elements/gstmultiqueue.c
+index 868e09f..34ca31e 100644
+--- a/plugins/elements/gstmultiqueue.c
++++ b/plugins/elements/gstmultiqueue.c
+@@ -2843,6 +2843,23 @@ gst_multi_queue_sink_query (GstPad * pad, GstObject * parent, GstQuery * query)
+   mq = (GstMultiQueue *) parent;
+ 
+   switch (GST_QUERY_TYPE (query)) {
++    case GST_QUERY_BUFFERING:
++    {
++      gint percent = 0;
++      if (sq->is_eos || sq->is_segment_done ||
++        sq->srcresult == GST_FLOW_NOT_LINKED || sq->is_sparse) {
++        percent = 100;
++      } else {
++        if (gst_data_queue_is_empty (sq->queue)) {
++          percent = 0;
++        } else if (gst_data_queue_is_full (sq->queue)) {
++          percent = 100;
++        }
++      }
++      gst_query_set_buffering_percent (query, mq->use_interleave, percent);
++      res = TRUE;
++      break;
++    }
+     default:
+       if (GST_QUERY_IS_SERIALIZED (query)) {
+         guint32 curid;
+-- 
+2.49.0
+

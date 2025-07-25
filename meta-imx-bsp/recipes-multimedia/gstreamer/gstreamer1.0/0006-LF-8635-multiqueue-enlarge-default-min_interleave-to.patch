@@ -1,0 +1,30 @@
+From 8431802f47444b6c243cf051c8eed653f5cff833 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 11 Apr 2023 16:15:52 +0800
+Subject: [PATCH 06/13] LF-8635 multiqueue: enlarge default min_interleave to
+ 5s
+
+Upstream-Status: Pending
+enlarge default min_interleave to 5s to avoid pipeline hange
+when av interleave big at begin
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ plugins/elements/gstmultiqueue.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/elements/gstmultiqueue.c b/plugins/elements/gstmultiqueue.c
+index 1f2bf82..868e09f 100644
+--- a/plugins/elements/gstmultiqueue.c
++++ b/plugins/elements/gstmultiqueue.c
+@@ -267,7 +267,7 @@ enum
+ #define DEFAULT_USE_INTERLEAVE FALSE
+ #define DEFAULT_UNLINKED_CACHE_TIME 250 * GST_MSECOND
+ 
+-#define DEFAULT_MINIMUM_INTERLEAVE (250 * GST_MSECOND)
++#define DEFAULT_MINIMUM_INTERLEAVE (5 * GST_SECOND)
+ 
+ enum
+ {
+-- 
+2.49.0
+
