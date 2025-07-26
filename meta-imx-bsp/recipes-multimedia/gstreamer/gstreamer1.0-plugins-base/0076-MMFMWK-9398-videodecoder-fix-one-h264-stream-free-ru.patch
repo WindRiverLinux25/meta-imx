@@ -1,0 +1,46 @@
+From 0548edae4b5da910251f907ad1ef9ac3235cd1bf Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 16 Jul 2024 15:59:16 +0800
+Subject: [PATCH 76/91] MMFMWK-9398 videodecoder: fix one h264 stream free run
+ playback with low performance
+
+For stream that buffer has invalid pts and needs reorder, current
+videodecoder will set this invalid pts as earliest_pts_frame's pts.
+The output pts of frames whose dequeue order is later than input
+order owing to reorder will be set to previous frame's output pts.
+
+When free run playback, basesink uses buffer timestamp as running time.
+Basetransform will drop frames if their running time is same with
+previous one. To solve such issue, videodecoder should only set valid
+pts/dts to earliest_pts_frame to avoid getting duplicate output ts.
+
+Upstream-Status: Pending
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/video/gstvideodecoder.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/gst-libs/gst/video/gstvideodecoder.c b/gst-libs/gst/video/gstvideodecoder.c
+index a25336a..f4cc088 100644
+--- a/gst-libs/gst/video/gstvideodecoder.c
++++ b/gst-libs/gst/video/gstvideodecoder.c
+@@ -3080,11 +3080,13 @@ gst_video_decoder_prepare_finish_frame (GstVideoDecoder *
+     }
+   }
+   /* save dts if needed */
+-  if (earliest_dts_frame && earliest_dts_frame != frame) {
++  if (earliest_dts_frame && earliest_dts_frame != frame
++      && GST_CLOCK_TIME_IS_VALID (frame->abidata.ABI.ts)) {
+     earliest_dts_frame->abidata.ABI.ts = frame->abidata.ABI.ts;
+   }
+   /* save pts if needed */
+-  if (earliest_pts_frame && earliest_pts_frame != frame) {
++  if (earliest_pts_frame && earliest_pts_frame != frame
++      && GST_CLOCK_TIME_IS_VALID (frame->abidata.ABI.ts2)) {
+     earliest_pts_frame->abidata.ABI.ts2 = frame->abidata.ABI.ts2;
+   }
+ 
+-- 
+2.43.0
+

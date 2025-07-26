@@ -1,0 +1,178 @@
+From 6360da02bb5532d891d04f69b390b5929eb5cd2a Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Mon, 14 Dec 2020 10:13:46 +0800
+Subject: [PATCH 32/91] glupload: add dmaheaps memory support in glupload
+
+Enable dmabuf heaps memory allocator in glupload
+add support in glmemorydma
+
+Upstream-Status: Pending
+
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit e5d0cd36a127ee9e2327edd8c29b67e1d650a5c3)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/gstglconfig.h.meson |  1 +
+ gst-libs/gst/gl/gstglmemorydma.c    | 11 ++++++++++-
+ gst-libs/gst/gl/gstglupload.c       | 29 ++++++++++++++++++++++++-----
+ gst-libs/gst/gl/meson.build         | 20 +++++++++++++-------
+ 4 files changed, 48 insertions(+), 13 deletions(-)
+
+diff --git a/gst-libs/gst/gl/gstglconfig.h.meson b/gst-libs/gst/gl/gstglconfig.h.meson
+index 2727178..18127f1 100644
+--- a/gst-libs/gst/gl/gstglconfig.h.meson
++++ b/gst-libs/gst/gl/gstglconfig.h.meson
+@@ -35,6 +35,7 @@ G_BEGIN_DECLS
+ #mesondefine GST_GL_HAVE_VIV_DIRECTVIV
+ #mesondefine GST_GL_HAVE_PHYMEM
+ #mesondefine GST_GL_HAVE_IONDMA
++#mesondefine GST_GL_HAVE_DMABUFHEAPS
+ 
+ #mesondefine GST_GL_HAVE_GLEGLIMAGEOES
+ #mesondefine GST_GL_HAVE_GLCHAR
+diff --git a/gst-libs/gst/gl/gstglmemorydma.c b/gst-libs/gst/gl/gstglmemorydma.c
+index b7cae21..6cc4f4b 100644
+--- a/gst-libs/gst/gl/gstglmemorydma.c
++++ b/gst-libs/gst/gl/gstglmemorydma.c
+@@ -29,6 +29,10 @@
+ #include <gst/allocators/gstdmabuf.h>
+ #include <gst/gl/gstglmemorydma.h>
+ 
++#if GST_GL_HAVE_DMABUFHEAPS
++#include <gst/allocators/gstdmabufheaps.h>
++#endif
++
+ #if GST_GL_HAVE_IONDMA
+ #include <gst/allocators/gstionmemory.h>
+ #endif
+@@ -49,8 +53,13 @@ gst_gl_memory_dma_init_instance (void)
+   GST_DEBUG_CATEGORY_INIT (GST_CAT_GL_DMA_MEMORY, "glmemorydma", 0,
+       "OpenGL dma memory");
+ 
++#if GST_GL_HAVE_DMABUFHEAPS
++  ion_allocator = gst_dmabufheaps_allocator_obtain ();
++#endif
++
+ #if GST_GL_HAVE_IONDMA
+-  ion_allocator = gst_ion_allocator_obtain ();
++  if (!ion_allocator)
++    ion_allocator = gst_ion_allocator_obtain ();
+ #endif
+ 
+   if (!ion_allocator)
+diff --git a/gst-libs/gst/gl/gstglupload.c b/gst-libs/gst/gl/gstglupload.c
+index 218d0d3..0eefb3a 100644
+--- a/gst-libs/gst/gl/gstglupload.c
++++ b/gst-libs/gst/gl/gstglupload.c
+@@ -56,6 +56,10 @@
+ #include "gstglphymemory.h"
+ #endif
+ 
++#if GST_GL_HAVE_DMABUFHEAPS
++#include <gst/allocators/gstdmabufheaps.h>
++#endif
++
+ #if GST_GL_HAVE_IONDMA
+ #include <gst/allocators/gstionmemory.h>
+ #endif
+@@ -1470,8 +1474,12 @@ _dma_buf_upload_setup_buffer_pool (GstBufferPool ** pool,
+ 
+   /* if user not provide an allocator, then use default ion allocator */
+   if (!allocator) {
++#if GST_GL_HAVE_DMABUFHEAPS
++    allocator = gst_dmabufheaps_allocator_obtain ();
++#endif
+ #if GST_GL_HAVE_IONDMA
+-    allocator = gst_ion_allocator_obtain ();
++    if (!allocator)
++      allocator = gst_ion_allocator_obtain ();
+ #endif
+   }
+ 
+@@ -1805,9 +1813,14 @@ _dma_buf_upload_propose_allocation (gpointer impl, GstQuery * decide_query,
+     GST_DEBUG ("upstream has memory:GLMemory feature");
+     return;
+   }
++#if GST_GL_HAVE_DMABUFHEAPS
++  allocator = gst_dmabufheaps_allocator_obtain ();
++#endif
+ #if GST_GL_HAVE_IONDMA
+-  allocator = gst_ion_allocator_obtain ();
++  if (!allocator)
++    allocator = gst_ion_allocator_obtain ();
+ #endif
++
+   if (!allocator) {
+     GST_WARNING ("New ion allocator failed.");
+     return;
+@@ -2918,12 +2931,18 @@ _directviv_upload_propose_allocation (gpointer impl, GstQuery * decide_query,
+   if (fmt != GST_VIDEO_FORMAT_RGBA)
+     return;
+ 
+-#if GST_GL_HAVE_IONDMA
+   /* physical memory buffer pool was only proposed
+    * when ion is not available to avoid allocator
+    * overwrite in allocation query, we need keep use
+    * ion when it is available */
+-  allocator = gst_ion_allocator_obtain ();
++#if GST_GL_HAVE_DMABUFHEAPS
++  allocator = gst_dmabufheaps_allocator_obtain ();
++  if (allocator)
++    return;
++#endif
++#if GST_GL_HAVE_IONDMA
++  if (!allocator)
++    allocator = gst_ion_allocator_obtain ();
+   if (allocator)
+     return;
+ #endif
+@@ -3137,7 +3156,7 @@ _directviv_upload_free (gpointer impl)
+     gst_buffer_unref (directviv->inbuf);
+ 
+   if (directviv->pool)
+-    gst_object_unref(directviv->pool);
++    gst_object_unref (directviv->pool);
+ 
+   g_free (impl);
+ }
+diff --git a/gst-libs/gst/gl/meson.build b/gst-libs/gst/gl/meson.build
+index 38df43a..a30348d 100644
+--- a/gst-libs/gst/gl/meson.build
++++ b/gst-libs/gst/gl/meson.build
+@@ -147,6 +147,7 @@ glconf_options = [
+     'GST_GL_HAVE_VIV_DIRECTVIV',
+     'GST_GL_HAVE_PHYMEM',
+     'GST_GL_HAVE_IONDMA',
++    'GST_GL_HAVE_DMABUFHEAPS',
+ 
+     'GST_GL_HAVE_GLEGLIMAGEOES',
+     'GST_GL_HAVE_GLCHAR',
+@@ -572,13 +573,18 @@ if need_platform_egl != 'no'
+       gl_misc_deps += [allocators_dep, libdrm_dep]
+       glconf.set('GST_GL_HAVE_DMABUF', 1)
+       if cc.has_header('linux/ion.h')
+-	gl_sources += [
+-		'gstglmemorydma.c',
+-	]
+-	gl_headers += [
+-		'gstglmemorydma.h',
+-	]
+-	glconf.set('GST_GL_HAVE_IONDMA', 1)
++        glconf.set('GST_GL_HAVE_IONDMA', 1)
++      endif
++      if cc.has_header('linux/dma-heap.h')
++        glconf.set('GST_GL_HAVE_DMABUFHEAPS', 1)
++      endif
++      if cc.has_header('linux/ion.h') or cc.has_header('linux/dma-heap.h')
++          gl_sources += [
++            'gstglmemorydma.c',
++          ]
++          gl_headers += [
++            'gstglmemorydma.h',
++          ]
+       endif
+     endif
+ 
+-- 
+2.43.0
+

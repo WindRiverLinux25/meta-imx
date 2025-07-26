@@ -1,0 +1,50 @@
+From 2fd34513da36c13e4a66741f302dffc905d2deba Mon Sep 17 00:00:00 2001
+From: Chao Guo <chao.guo@nxp.com>
+Date: Tue, 24 Sep 2024 17:05:08 +0800
+Subject: [PATCH 81/91] MMFMWK-9420 gloverlaycompositor: make element draw
+ overlays.
+
+textoverlay ! glvideomixer ! glimagesink
+
+When textoverlay is placed before glvideomixer in the pipeline,
+glimagesink cannot draw the text overlay specified by textoverlay
+on the output image. Because glvideomixerelement cannot pass
+GstVideoOverlayCompositionMeta downstream.
+
+Therefore, let gloverlaycompositorelement in glvideomixer bin draw
+the text overlay specified by textoverlay so that the pipeline can
+output the expected picture.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chao Guo <chao.guo@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/gl/gstgloverlaycompositorelement.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/ext/gl/gstgloverlaycompositorelement.c b/ext/gl/gstgloverlaycompositorelement.c
+index ef49298..de741c4 100644
+--- a/ext/gl/gstgloverlaycompositorelement.c
++++ b/ext/gl/gstgloverlaycompositorelement.c
+@@ -338,10 +338,16 @@ gst_gl_overlay_compositor_element_callback (GstGLFilter * filter,
+ {
+   GstGLOverlayCompositorElement *self =
+       GST_GL_OVERLAY_COMPOSITOR_ELEMENT (filter);
++  gfloat matrix[16] = {
++    1.0, 0.0, 0.0, 0.0,
++    0.0, 1.0, 0.0, 0.0,
++    0.0, 0.0, 1.0, 0.0,
++    0.0, 0.0, 0.0, 1.0,
++  };
+ 
+   GST_LOG_OBJECT (self, "drawing overlays");
+ 
+-  gst_gl_overlay_compositor_draw_overlays (self->overlay_compositor, NULL);
++  gst_gl_overlay_compositor_draw_overlays (self->overlay_compositor, matrix);
+ 
+   return TRUE;
+ }
+-- 
+2.43.0
+

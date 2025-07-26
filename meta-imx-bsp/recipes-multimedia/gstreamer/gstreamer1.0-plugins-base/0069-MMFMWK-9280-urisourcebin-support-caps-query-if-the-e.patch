@@ -1,0 +1,189 @@
+From 9f17adf2d5cd5120d3231fcd1d5dcf30e6394480 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Thu, 24 Aug 2023 10:51:37 +0800
+Subject: [PATCH 69/91] MMFMWK-9280 urisourcebin: support caps query if the
+ element is not linked
+
+Whenever an autoplugged element like ac3parse that
+is not linked downstream yet and not exposed does
+a query, It can't get the downstream supported caps.
+Add the function to support it.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gsturidecodebin3.c | 17 +++++++++
+ gst/playback/gsturisourcebin.c  | 64 +++++++++++++++++++++++++++++++++
+ 2 files changed, 81 insertions(+)
+
+diff --git a/gst/playback/gsturidecodebin3.c b/gst/playback/gsturidecodebin3.c
+index 959241d..8f6004e 100644
+--- a/gst/playback/gsturidecodebin3.c
++++ b/gst/playback/gsturidecodebin3.c
+@@ -1514,6 +1514,9 @@ new_source_handler (GstURIDecodeBin3 * uridecodebin, GstPlayItem * item,
+       "ring-buffer-max-size", uridecodebin->ring_buffer_max_size,
+       "parse-streams", TRUE, NULL);
+ 
++  g_object_set (handler->urisourcebin, "caps",
++        uridecodebin->caps, NULL);
++
+   handler->pad_added_id =
+       g_signal_connect (handler->urisourcebin, "pad-added",
+       (GCallback) src_pad_added_cb, handler);
+@@ -1581,6 +1584,19 @@ gst_uri_decode_bin3_set_connection_speed (GstURIDecodeBin3 * dec)
+   }
+ }
+ 
++static void
++gst_uri_decode_bin3_set_urisourcebin_caps (GstURIDecodeBin3 * dec)
++{
++  GList *walk;
++
++  /* set the property on all decodebins now */
++  for (walk = dec->source_handlers; walk; walk = g_list_next (walk)) {
++    GstSourceHandler *handler = (GstSourceHandler *) (walk->data);
++    g_object_set (handler->urisourcebin, "caps",
++        dec->caps, NULL);
++  }
++}
++
+ static void
+ gst_uri_decode_bin3_set_property (GObject * object, guint prop_id,
+     const GValue * value, GParamSpec * pspec)
+@@ -1625,6 +1641,7 @@ gst_uri_decode_bin3_set_property (GObject * object, guint prop_id,
+       dec->caps = g_value_dup_boxed (value);
+       GST_OBJECT_UNLOCK (dec);
+       /* need update caps because playsink may have some caps which is not in the raw caps list */
++      gst_uri_decode_bin3_set_urisourcebin_caps (dec);
+       g_object_set (dec->decodebin, "caps", dec->caps, NULL);
+       break;
+     case PROP_INSTANT_URI:
+diff --git a/gst/playback/gsturisourcebin.c b/gst/playback/gsturisourcebin.c
+index 7004f65..6910dc5 100644
+--- a/gst/playback/gsturisourcebin.c
++++ b/gst/playback/gsturisourcebin.c
+@@ -197,6 +197,7 @@ struct _GstURISourceBin
+   gint last_buffering_pct;      /* Avoid sending buffering over and over */
+   GMutex buffering_lock;
+   GMutex buffering_post_lock;
++  GstCaps *caps;
+ 
+   /* Current output collection (if provided by internal elements) */
+   GstStreamCollection *collection;
+@@ -269,6 +270,7 @@ enum
+   PROP_HIGH_WATERMARK,
+   PROP_STATISTICS,
+   PROP_PARSE_STREAMS,
++  PROP_CAPS,
+ };
+ 
+ #define CUSTOM_EOS_QUARK _custom_eos_quark_get ()
+@@ -480,6 +482,11 @@ gst_uri_source_bin_class_init (GstURISourceBinClass * klass)
+           "Extract the elementary streams of non-raw sources",
+           DEFAULT_PARSE_STREAMS, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+ 
++  g_object_class_install_property (gobject_class, PROP_CAPS,
++      g_param_spec_boxed ("caps", "Caps",
++          "The caps on which to support audio passthrough. (NULL = default)",
++          GST_TYPE_CAPS, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
++
+   /**
+    * GstURISourceBin::drained:
+    *
+@@ -554,6 +561,7 @@ gst_uri_source_bin_init (GstURISourceBin * urisrc)
+   urisrc->last_buffering_pct = -1;
+   urisrc->low_watermark = DEFAULT_LOW_WATERMARK;
+   urisrc->high_watermark = DEFAULT_HIGH_WATERMARK;
++  urisrc->caps = DEFAULT_CAPS;
+ 
+   GST_OBJECT_FLAG_SET (urisrc,
+       GST_ELEMENT_FLAG_SOURCE | GST_BIN_FLAG_STREAMS_AWARE);
+@@ -652,6 +660,11 @@ gst_uri_source_bin_set_property (GObject * object, guint prop_id,
+     case PROP_PARSE_STREAMS:
+       urisrc->parse_streams = g_value_get_boolean (value);
+       break;
++    case PROP_CAPS:
++      if (urisrc->caps)
++        gst_caps_unref (urisrc->caps);
++      urisrc->caps = g_value_dup_boxed (value);
++      break;
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+       break;
+@@ -714,6 +727,9 @@ gst_uri_source_bin_get_property (GObject * object, guint prop_id,
+     case PROP_PARSE_STREAMS:
+       g_value_set_boolean (value, urisrc->parse_streams);
+       break;
++    case PROP_CAPS:
++      g_value_set_boxed (value, urisrc->caps);
++      break;
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+       break;
+@@ -1611,6 +1627,51 @@ demuxer_pad_removed_cb (GstElement * element, GstPad * pad,
+   return;
+ }
+ 
++static gboolean
++autoplug_query_caps (GstElement * parsebin, GstPad * pad,
++    GstElement * element, GstQuery * query, ChildSrcPadInfo * info)
++{
++  GstURISourceBin *urisrc = info->urisrc;
++
++  GST_DEBUG_OBJECT (parsebin, "query %" GST_PTR_FORMAT, query);
++
++  /* This function is called whenever an autoplugged element that is
++   * not linked downstream yet and not exposed does a query. It can
++   * be used to tell the element about the downstream supported caps */
++  GstCaps *select_caps = gst_caps_from_string (AUDIO_PASSTHROUGH_CAPS);
++  if (gst_caps_is_subset (select_caps, urisrc->caps)) {
++    GstCaps *filter;
++    gst_query_parse_caps (query, &filter);
++    if (filter) {
++      if (gst_caps_can_intersect (filter, urisrc->caps)) {
++        GstCaps *intersection;
++
++        intersection = gst_caps_intersect_full (filter, urisrc->caps,
++            GST_CAPS_INTERSECT_FIRST);
++        gst_query_set_caps_result (query, intersection);
++        GST_DEBUG_OBJECT (parsebin, "query result %" GST_PTR_FORMAT, query);
++        gst_caps_unref (intersection);
++        gst_caps_unref (select_caps);
++        return TRUE;
++      }
++    }
++  }
++  gst_caps_unref (select_caps);
++  return FALSE;
++}
++
++static gboolean
++demuxer_pad_autoplug_query_cb (GstElement * parsebin, GstPad * pad,
++    GstElement * element, GstQuery * query, ChildSrcPadInfo * info)
++{
++  switch (GST_QUERY_TYPE (query)) {
++    case GST_QUERY_CAPS:
++      return autoplug_query_caps (parsebin, pad, element, query, info);
++    default:
++      return FALSE;
++  }
++}
++
+ /* helper function to lookup stuff in lists */
+ static gboolean
+ array_has_value (const gchar * values[], const gchar * value)
+@@ -2149,6 +2210,9 @@ setup_parsebin_for_slot (ChildSrcPadInfo * info, GstPad * originating_pad)
+   g_signal_connect (info->demuxer,
+       "pad-removed", G_CALLBACK (demuxer_pad_removed_cb), info);
+ 
++  g_signal_connect (info->demuxer,
++      "autoplug-query", G_CALLBACK (demuxer_pad_autoplug_query_cb), info);
++
+   if (info->pre_parse_queue) {
+     gst_element_sync_state_with_parent (info->pre_parse_queue);
+   }
+-- 
+2.43.0
+

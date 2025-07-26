@@ -1,0 +1,58 @@
+From c6acbe907c778448c20130af1a91746f9bd799ec Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 10 Jul 2024 18:34:32 +0900
+Subject: [PATCH 78/91] LF-12650 playsink: fix race condition when release pad
+
+when upstream request release pad, there is chance that
+playsink do reconfiguration at the same time, if the release
+pad function unlock playsink to remove pad, reconfigration
+will check the pad pointer and add back the chain which
+is going to be release, need add remove pad into lock area
+to avoid race condition between do reconfigure
+
+Upstream-Status: Pending
+
+gstplaybin3.c:2697:reconfigure_output:<playbin3>m Releasing playsink pad
+gstplaysink.c:4720:gst_play_sink_release_pad:<playsink>m release pad <playsink:video_sink>
+gstplaysink.c:4745:gst_play_sink_release_pad:<playsink>m deactivate pad <playsink:video_sink>
+gstplaysink.c:4748:gst_play_sink_release_pad:<playsink>m untargeting pad <playsink:video_sink>
+gstplaysink.c:4441:sinkpad_blocked_cb:<playsink:audio_sink>m Audio pad blocked
+gstplaysink.c:4448:sinkpad_blocked_cb:<playsink>m All pads blocked -- reconfiguring
+gstplaysink.c:3228:gst_play_sink_do_reconfigure:<playsink>m reconfiguring
+gstplaysink.c:3247:gst_play_sink_do_reconfigure:<playsink>m Video pad is raw: 1
+gstplaysink.c:3253:gst_play_sink_do_reconfigure:<playsink>m Audio pad is raw: 1
+gstplaysink.c:3303:gst_play_sink_do_reconfigure:<playsink>m audio:1, video:1, vis:0, text:0
+gstplaysink.c:3316:gst_play_sink_do_reconfigure:<playsink>m adding video, raw 1
+gstplaysink.c:1767:gen_video_chain:<playsink>m making video chain 0xffffa02c1950
+gstplaysink.c:1775:gen_video_chain:<playsink>m trying autovideosink
+gstplaysink.c:4751:gst_play_sink_release_pad:<playsink>m remove pad <playsink:video_sink>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstplaysink.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/gst/playback/gstplaysink.c b/gst/playback/gstplaysink.c
+index 7c38e81..9335661 100644
+--- a/gst/playback/gstplaysink.c
++++ b/gst/playback/gstplaysink.c
+@@ -4739,8 +4739,6 @@ gst_play_sink_release_pad (GstPlaySink * playsink, GstPad * pad)
+     untarget = FALSE;
+   }
+ 
+-  GST_PLAY_SINK_UNLOCK (playsink);
+-
+   if (*res) {
+     GST_DEBUG_OBJECT (playsink, "deactivate pad %" GST_PTR_FORMAT, *res);
+     gst_pad_set_active (*res, FALSE);
+@@ -4753,8 +4751,6 @@ gst_play_sink_release_pad (GstPlaySink * playsink, GstPad * pad)
+     *res = NULL;
+   }
+ 
+-  GST_PLAY_SINK_LOCK (playsink);
+-
+   /* If we have a pending reconfigure, we might have met the conditions
+    * to reconfigure now */
+   if (gst_play_sink_ready_to_reconfigure_locked (playsink)) {
+-- 
+2.43.0
+

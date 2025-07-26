@@ -1,0 +1,53 @@
+From 068acfd3c195b877a0934ae03da7ef7a1d28e0b9 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Mon, 29 May 2023 15:56:40 +0800
+Subject: [PATCH 67/91] LF-9192 alsasink: return actual caps if alsasink does
+ not open device
+
+The caps obtained should not include passthrough
+caps if passthrough function is not enabled.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/alsa/gstalsasink.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/ext/alsa/gstalsasink.c b/ext/alsa/gstalsasink.c
+index 54cb51f..fcf36ec 100644
+--- a/ext/alsa/gstalsasink.c
++++ b/ext/alsa/gstalsasink.c
+@@ -124,6 +124,12 @@ static GstStaticPadTemplate alsasink_sink_factory =
+         PASSTHROUGH_CAPS)
+     );
+ 
++static GstStaticCaps alsasink_default_raw_caps =
++GST_STATIC_CAPS ("audio/x-raw, "
++        "format = (string) " GST_AUDIO_FORMATS_ALL ", "
++        "layout = (string) interleaved, "
++        "rate = (int) [ 1, MAX ], " "channels = (int) [ 1, MAX ];");
++
+ static void
+ gst_alsasink_finalise (GObject * object)
+ {
+@@ -308,8 +314,13 @@ gst_alsasink_getcaps (GstBaseSink * bsink, GstCaps * filter)
+   GST_OBJECT_LOCK (sink);
+   if (sink->handle == NULL) {
+     GST_OBJECT_UNLOCK (sink);
+-    GST_DEBUG_OBJECT (sink, "device not open, using template caps");
+-    return NULL;                /* base class will get template caps for us */
++    if (TRUE == sink->passthrough) {
++      GST_DEBUG_OBJECT (sink, "device not open, using template caps");
++      return NULL;                /* base class will get template caps for us */
++    } else {
++      /* should not include passthrough caps if passthrough function is not enabled */
++      return gst_static_caps_get (&alsasink_default_raw_caps);
++    }
+   }
+ 
+   if (sink->cached_caps) {
+-- 
+2.43.0
+

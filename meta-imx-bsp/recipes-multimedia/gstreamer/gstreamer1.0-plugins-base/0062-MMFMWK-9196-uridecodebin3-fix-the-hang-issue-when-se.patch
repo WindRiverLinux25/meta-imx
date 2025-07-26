@@ -1,0 +1,51 @@
+From c393f41c52d4c0b0323ff0d668b68a226f724f3c Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Tue, 21 Feb 2023 14:06:57 +0800
+Subject: [PATCH 62/91] MMFMWK-9196 uridecodebin3: fix the hang issue when
+ setting connection speed
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gsturidecodebin3.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/gst/playback/gsturidecodebin3.c b/gst/playback/gsturidecodebin3.c
+index 8bb80e0..4b65b94 100644
+--- a/gst/playback/gsturidecodebin3.c
++++ b/gst/playback/gsturidecodebin3.c
+@@ -1566,13 +1566,18 @@ static void
+ gst_uri_decode_bin3_set_connection_speed (GstURIDecodeBin3 * dec)
+ {
+   GList *walk;
++  guint64 connection_speed;
++
++  GST_OBJECT_LOCK (dec);
++  connection_speed = dec->connection_speed;
++  GST_OBJECT_UNLOCK (dec);
+ 
+   /* set the property on all decodebins now */
+   for (walk = dec->source_handlers; walk; walk = g_list_next (walk)) {
+     GstSourceHandler *handler = (GstSourceHandler *) (walk->data);
+ 
+     g_object_set (handler->urisourcebin, "connection-speed",
+-        dec->connection_speed / 1000, NULL);
++        connection_speed / 1000, NULL);
+   }
+ }
+ 
+@@ -1592,8 +1597,8 @@ gst_uri_decode_bin3_set_property (GObject * object, guint prop_id,
+     case PROP_CONNECTION_SPEED:
+       GST_OBJECT_LOCK (dec);
+       dec->connection_speed = g_value_get_uint64 (value) * 1000;
+-      gst_uri_decode_bin3_set_connection_speed (dec);
+       GST_OBJECT_UNLOCK (dec);
++      gst_uri_decode_bin3_set_connection_speed (dec);
+       break;
+     case PROP_BUFFER_SIZE:
+       dec->buffer_size = g_value_get_int (value);
+-- 
+2.43.0
+

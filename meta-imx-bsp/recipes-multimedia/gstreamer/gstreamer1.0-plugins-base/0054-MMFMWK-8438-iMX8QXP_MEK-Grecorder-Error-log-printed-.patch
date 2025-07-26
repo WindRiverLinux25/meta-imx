@@ -1,0 +1,34 @@
+From 69187d7839fc4d3f1a76826c3ef2838437581aaa Mon Sep 17 00:00:00 2001
+From: Song Bing <bing.song@nxp.com>
+Date: Mon, 1 Apr 2019 11:50:04 -0700
+Subject: [PATCH 54/91] MMFMWK-8438 [iMX8QXP_MEK]Grecorder: Error log printed
+ if set resolution to 640x480 or 752x480 then start recording, 100%
+
+v4l2src will use default colorimetry. But the default will change
+based on resolution. All other moduler don't change colorimetry
+based on resolution. Change SD colorimetry to HD colorimetry.
+
+Upstream-Status: Pending
+Signed-off-by: Song Bing <bing.song@nxp.com>
+(cherry picked from commit b51ab6f8c3d04deda97e3709daaaa9b3fab526e4)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/video/video-info.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/video/video-info.c b/gst-libs/gst/video/video-info.c
+index 35fa2a2..746d43f 100644
+--- a/gst-libs/gst/video/video-info.c
++++ b/gst-libs/gst/video/video-info.c
+@@ -170,7 +170,7 @@ set_default_colorimetry (GstVideoInfo * info)
+       info->colorimetry = default_color[DEFAULT_YUV_HD];
+     } else {
+       info->chroma_site = GST_VIDEO_CHROMA_SITE_NONE;
+-      info->colorimetry = default_color[DEFAULT_YUV_SD];
++      info->colorimetry = default_color[DEFAULT_YUV_HD];
+     }
+   } else if (GST_VIDEO_FORMAT_INFO_IS_GRAY (finfo)) {
+     info->colorimetry = default_color[DEFAULT_GRAY];
+-- 
+2.43.0
+

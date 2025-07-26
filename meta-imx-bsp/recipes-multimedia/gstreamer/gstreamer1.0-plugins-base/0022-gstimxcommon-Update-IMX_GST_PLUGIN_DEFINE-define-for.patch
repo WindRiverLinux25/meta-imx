@@ -1,0 +1,42 @@
+From 1de2ac66db1cc05a7cf595253c3c8e737b549984 Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@nxp.com>
+Date: Wed, 11 Apr 2018 16:55:11 +0800
+Subject: [PATCH 22/91] gstimxcommon: Update IMX_GST_PLUGIN_DEFINE define for
+ GST1.14
+
+- As macro GST_PLUGIN_DEFINE is upgraded in GST1.14
+(change C structure into function
+commit e7ede5a487, https://bugzilla.gnome.org/show_bug.cgi?id=779344)
+
+So our macor cannot use "." in name field
+
+Upstream-Status: Pending
+
+-- i.MX specific
+
+Signed-off-by: Lyon Wang <lyon.wang@nxp.com>
+(cherry picked from commit 26c5c0be1b4a34520e28dbb16e8fba5ebc8e61f4)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gstimxcommon.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 gst-libs/gst/gstimxcommon.h
+
+diff --git a/gst-libs/gst/gstimxcommon.h b/gst-libs/gst/gstimxcommon.h
+old mode 100644
+new mode 100755
+index e2a0aa2..2d05ca3
+--- a/gst-libs/gst/gstimxcommon.h
++++ b/gst-libs/gst/gstimxcommon.h
+@@ -41,7 +41,7 @@ extern "C" {
+ #define IMX_GST_PLUGIN_DEFINE(name, description, initfunc)\
+   GST_PLUGIN_DEFINE(GST_VERSION_MAJOR,\
+       GST_VERSION_MINOR,\
+-      name.imx,\
++      name, \
+       description,\
+       initfunc,\
+       VERSION,\
+-- 
+2.43.0
+

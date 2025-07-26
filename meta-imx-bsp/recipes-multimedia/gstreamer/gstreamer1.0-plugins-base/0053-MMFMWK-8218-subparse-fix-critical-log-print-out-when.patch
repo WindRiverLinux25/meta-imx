@@ -1,0 +1,38 @@
+From 8f5edb03704b62b6176c86a17e4f54580fd99353 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 30 Mar 2017 13:43:05 +0800
+Subject: [PATCH 53/91] MMFMWK-8218 subparse: fix critical log print out when
+ set rate <0 with external subtitle
+
+When playback with external subtitle, subparse will force its own start
+and stop position when seek. When rate < 0, critial log will print out
+assertion 'stop != -1', so need avoid it when rate < 0.
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=771648
+
+(cherry picked from commit d02243efde9a71bcfc4b07b5307fe979302368ee)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/subparse/gstsubparse.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/gst/subparse/gstsubparse.c b/gst/subparse/gstsubparse.c
+index 549d734..6748c48 100644
+--- a/gst/subparse/gstsubparse.c
++++ b/gst/subparse/gstsubparse.c
+@@ -282,6 +282,11 @@ gst_sub_parse_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
+ 
+       /* Convert that seek to a seeking in bytes at position 0,
+          FIXME: could use an index */
++      if (rate < 0) {
++        rate = 1.0;
++        GST_WARNING_OBJECT (self, "Only can push positive rate upstream");
++      }
++
+       ret = gst_pad_push_event (self->sinkpad,
+           gst_event_new_seek (rate, GST_FORMAT_BYTES, flags,
+               GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_NONE, 0));
+-- 
+2.43.0
+

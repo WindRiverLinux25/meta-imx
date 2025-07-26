@@ -1,0 +1,115 @@
+From f96447b8731cb0540e667f94ee62e6b6ea18222a Mon Sep 17 00:00:00 2001
+From: Ming Qian <ming.qian@nxp.com>
+Date: Thu, 22 Dec 2022 17:24:59 +0800
+Subject: [PATCH 57/91] MMFMWK-9186-1 video: Add support for Y012_LE
+
+Y012_LE is 12-bit grayscale, least significant byte first.
+expanded to 16 bits, little endian,
+data in the 12 high bits, zeros in the 4 low bits
+
+Upstream-Status: Pending
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/video/video-converter.c |  1 +
+ gst-libs/gst/video/video-format.c    |  3 +++
+ gst-libs/gst/video/video-format.h    | 16 ++++++++++++++--
+ gst-libs/gst/video/video-info.c      |  1 +
+ 4 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/gst-libs/gst/video/video-converter.c b/gst-libs/gst/video/video-converter.c
+index 435c7a2..8f56c13 100644
+--- a/gst-libs/gst/video/video-converter.c
++++ b/gst-libs/gst/video/video-converter.c
+@@ -7365,6 +7365,7 @@ get_scale_format (GstVideoFormat format, gint plane)
+     case GST_VIDEO_FORMAT_P016_LE:
+     case GST_VIDEO_FORMAT_P012_BE:
+     case GST_VIDEO_FORMAT_P012_LE:
++    case GST_VIDEO_FORMAT_Y012_LE:
+     case GST_VIDEO_FORMAT_Y212_BE:
+     case GST_VIDEO_FORMAT_Y212_LE:
+     case GST_VIDEO_FORMAT_Y412_BE:
+diff --git a/gst-libs/gst/video/video-format.c b/gst-libs/gst/video/video-format.c
+index ddbc17c..47de5ce 100644
+--- a/gst-libs/gst/video/video-format.c
++++ b/gst-libs/gst/video/video-format.c
+@@ -7353,6 +7353,7 @@ typedef struct
+ #define DPTH10_10_10_10  10, 4, { 0, 0, 0, 0 }, { 10, 10, 10, 10 }
+ #define DPTH10_10_10_HI  16, 3, { 6, 6, 6, 0 }, { 10, 10, 10, 0 }
+ #define DPTH10_10_10_2   10, 4, { 0, 0, 0, 0 }, { 10, 10, 10, 2}
++#define DPTH12           12, 1, { 0, 0, 0, 0 }, { 12, 0, 0, 0 }
+ #define DPTH12_12_12     12, 3, { 0, 0, 0, 0 }, { 12, 12, 12, 0 }
+ #define DPTH12_12_12_HI  16, 3, { 4, 4, 4, 0 }, { 12, 12, 12, 0 }
+ #define DPTH12_12_12_12  12, 4, { 0, 0, 0, 0 }, { 12, 12, 12, 12 }
+@@ -7790,6 +7791,8 @@ static const VideoFormat formats[] = {
+       OFFS0, SUB444, PACK_GBR_16BE),
+   MAKE_RGBA_FORMAT (RBGA, "raw video", DPTH8888, PSTR4444, PLANE0, OFFS0213,
+       SUB4444, PACK_RBGA),
++  MAKE_GRAY_LE_FORMAT (Y012_LE, "raw video", DPTH12, PSTR2, PLANE0, OFFS0,
++      SUB4, PACK_GRAY16_LE),
+ };
+ 
+ G_GNUC_END_IGNORE_DEPRECATIONS;
+diff --git a/gst-libs/gst/video/video-format.h b/gst-libs/gst/video/video-format.h
+index b853485..361f628 100644
+--- a/gst-libs/gst/video/video-format.h
++++ b/gst-libs/gst/video/video-format.h
+@@ -169,6 +169,7 @@ G_BEGIN_DECLS
+  * @GST_VIDEO_FORMAT_GBR_16LE: planar 4:4:4 RGB, 16 bits per channel (Since: 1.24)
+  * @GST_VIDEO_FORMAT_GBR_16BE: planar 4:4:4 RGB, 16 bits per channel (Since: 1.24)
+  * @GST_VIDEO_FORMAT_RBGA: packed RGB with alpha, 8 bits per channel (Since: 1.24)
++ * @GST_VIDEO_FORMAT_Y012_LE: 12-bit grayscale, least significant byte first, expanded to 16bits, zeros in the 4 low bits,  (Since: 1.24)
+  *
+  * Enum value describing the most common video formats.
+  *
+@@ -619,6 +620,17 @@ typedef enum {
+    * Since: 1.24
+    */
+   GST_VIDEO_FORMAT_RBGA,
++
++  /**
++   * GST_VIDEO_FORMAT_Y012_LE:
++   *
++   * 12-bit grayscale, least significant byte first
++   * expanded to 16 bits, little endian, data in the 12 high bits, zeros in the 4 low bits
++   *
++   * Since: 1.24
++   */
++  GST_VIDEO_FORMAT_Y012_LE,
++
+ } GstVideoFormat;
+ 
+ #define GST_VIDEO_MAX_PLANES 4
+@@ -1096,7 +1108,7 @@ gconstpointer  gst_video_format_get_palette          (GstVideoFormat format, gsi
+     "RGB10A2_LE, A444, GBRA, AYUV, VUYA, RGBA, RBGA, ARGB, BGRA, ABGR, A422, " \
+     "A420, AV12, Y444_16BE, GBR_16BE, Y444_16LE, GBR_16LE, v216, P016_BE, " \
+     "P016_LE, Y444_12BE, GBR_12BE, Y444_12LE, GBR_12LE, I422_12BE, I422_12LE, " \
+-    "Y212_BE, Y212_LE, I420_12BE, I420_12LE, P012_BE, P012_LE, Y444_10BE, " \
++    "Y212_BE, Y012_LE, Y212_LE, I420_12BE, I420_12LE, P012_BE, P012_LE, Y444_10BE, " \
+     "GBR_10BE, Y444_10LE, GBR_10LE, r210, I422_10BE, I422_10LE, NV16_10LE32, " \
+     "Y210, UYVP, v210, I420_10BE, I420_10LE, P010_10BE, MT2110R, MT2110T, " \
+     "NV12_10BE_8L128, NV12_10LE40_4L4, P010_10LE, NV12_10LE40, NV12_10LE32, " \
+@@ -1114,7 +1126,7 @@ gconstpointer  gst_video_format_get_palette          (GstVideoFormat format, gsi
+     "A422_10LE, A422_10BE, A420_10LE, A420_10BE, BGR10A2_LE, RGB10A2_LE, Y410, " \
+     "A444, GBRA, AYUV, VUYA, RGBA, RBGA, ARGB, BGRA, ABGR, A422, A420, AV12, " \
+     "Y444_16LE, GBR_16LE, Y444_16BE, GBR_16BE, v216, P016_LE, P016_BE, " \
+-    "Y444_12LE, GBR_12LE, Y444_12BE, GBR_12BE, I422_12LE, I422_12BE, Y212_LE, " \
++    "Y444_12LE, GBR_12LE, Y444_12BE, GBR_12BE, I422_12LE, I422_12BE, Y012_LE, Y212_LE, " \
+     "Y212_BE, I420_12LE, I420_12BE, P012_LE, P012_BE, Y444_10LE, GBR_10LE, " \
+     "Y444_10BE, GBR_10BE, r210, I422_10LE, I422_10BE, NV16_10LE32, Y210, UYVP, " \
+     "v210, I420_10LE, I420_10BE, P010_10LE, NV12_10LE40, NV12_10LE32, " \
+diff --git a/gst-libs/gst/video/video-info.c b/gst-libs/gst/video/video-info.c
+index 746d43f..099e55c 100644
+--- a/gst-libs/gst/video/video-info.c
++++ b/gst-libs/gst/video/video-info.c
+@@ -870,6 +870,7 @@ fill_planes (GstVideoInfo * info, gsize plane_size[GST_VIDEO_MAX_PLANES])
+       break;
+     case GST_VIDEO_FORMAT_GRAY16_BE:
+     case GST_VIDEO_FORMAT_GRAY16_LE:
++    case GST_VIDEO_FORMAT_Y012_LE:
+       info->stride[0] = GST_ROUND_UP_4 (width * 2);
+       info->offset[0] = 0;
+       info->size = info->stride[0] * height;
+-- 
+2.43.0
+

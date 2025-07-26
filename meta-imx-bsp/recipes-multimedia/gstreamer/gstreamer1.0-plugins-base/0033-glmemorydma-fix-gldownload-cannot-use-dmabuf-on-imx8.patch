@@ -1,0 +1,121 @@
+From 7238421dc133b5819ac1371b6acfff66478ed816 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 21 Feb 2022 13:41:34 +0800
+Subject: [PATCH 33/91] glmemorydma: fix gldownload cannot use dmabuf on imx8
+
+also need enable when we have dmabufheaps enabled
+
+Upstream-Status: Pending
+
+Signed-off-by: Haihua Hu <jared.hu@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/gl/gstgldownloadelement.c    | 19 +++++++++++--------
+ gst-libs/gst/gl/gstglmemorydma.c |  9 ++++-----
+ 2 files changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/ext/gl/gstgldownloadelement.c b/ext/gl/gstgldownloadelement.c
+index 53842de..99fffc9 100644
+--- a/ext/gl/gstgldownloadelement.c
++++ b/ext/gl/gstgldownloadelement.c
+@@ -36,7 +36,7 @@
+ #include <gst/gl/gstglphymemory.h>
+ #endif
+ 
+-#if GST_GL_HAVE_IONDMA
++#if GST_GL_HAVE_IONDMA || GST_GL_HAVE_DMABUFHEAPS
+ #include <gst/gl/gstglmemorydma.h>
+ #endif
+ 
+@@ -1240,13 +1240,17 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
+   GstBaseTransformClass *bclass = GST_BASE_TRANSFORM_GET_CLASS (bt);
+   GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
+   GstGLSyncMeta *in_sync_meta;
+-  GstCaps *src_caps = gst_pad_get_current_caps (bt->srcpad);
+   gint i, n;
++
++#if GST_GL_HAVE_IONDMA || GST_GL_HAVE_PHYMEM || GST_GL_HAVE_DMABUFHEAPS
++  GstCaps *src_caps = gst_pad_get_current_caps (bt->srcpad);
+   GstGLMemory *glmem;
+ 
+-  glmem = gst_buffer_peek_memory (inbuf, 0);
+-#if GST_GL_HAVE_IONDMA
+-  if (gst_is_gl_memory_dma (glmem)) {
++  glmem = (GstGLMemory *) gst_buffer_peek_memory (inbuf, 0);
++#endif
++
++#if GST_GL_HAVE_IONDMA || GST_GL_HAVE_DMABUFHEAPS
++  if (gst_is_gl_memory_dma ((GstMemory *) glmem)) {
+     GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
+     GstVideoInfo info;
+ 
+@@ -1260,8 +1264,7 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
+ #endif
+ 
+ #if GST_GL_HAVE_PHYMEM
+-  if (gst_is_gl_physical_memory (glmem)) {
+-    GstCaps *src_caps;
++  if (gst_is_gl_physical_memory ((GstMemory *) glmem)) {
+     GstVideoInfo info;
+     GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
+ 
+@@ -1433,7 +1436,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
+ 
+   GST_DEBUG_OBJECT (bt, "video format is %s", gst_video_format_to_string (fmt));
+ 
+-#if GST_GL_HAVE_IONDMA
++#if GST_GL_HAVE_IONDMA || GST_GL_HAVE_DMABUFHEAPS
+   if (fmt == GST_VIDEO_FORMAT_RGBA || fmt == GST_VIDEO_FORMAT_RGB16) {
+     allocator = gst_gl_memory_dma_allocator_obtain ();
+     GST_DEBUG_OBJECT (bt, "obtain dma memory allocator %p.", allocator);
+diff --git a/gst-libs/gst/gl/gstglmemorydma.c b/gst-libs/gst/gl/gstglmemorydma.c
+index 6cc4f4b..3160cb2 100644
+--- a/gst-libs/gst/gl/gstglmemorydma.c
++++ b/gst-libs/gst/gl/gstglmemorydma.c
+@@ -80,7 +80,7 @@ gst_gl_memory_dma_allocator_obtain (void)
+ {
+ 
+   static GOnce once = G_ONCE_INIT;
+-  GstAllocator *allocator;
++  GstAllocator *allocator = NULL;
+ 
+   g_once (&once, (GThreadFunc) gst_gl_memory_dma_init_instance, NULL);
+ 
+@@ -110,6 +110,7 @@ static gboolean
+ _gl_mem_create (GstGLMemoryDMA * gl_mem, GError ** error)
+ {
+   GstGLContext *context = gl_mem->mem.mem.context;
++  const GstGLFuncs *gl = context->gl_vtable;
+   GstGLBaseMemoryAllocatorClass *alloc_class;
+   guint dma_fd;
+ 
+@@ -127,8 +128,6 @@ _gl_mem_create (GstGLMemoryDMA * gl_mem, GError ** error)
+     return FALSE;
+   }
+ 
+-  const GstGLFuncs *gl = context->gl_vtable;
+-
+   gl->ActiveTexture (GL_TEXTURE0);
+   gl->BindTexture (GL_TEXTURE_2D, gl_mem->mem.tex_id);
+   gl->EGLImageTargetTexture2D (GL_TEXTURE_2D,
+@@ -193,7 +192,7 @@ _gl_mem_dma_alloc (GstGLBaseMemoryAllocator * allocator,
+       gst_allocator_alloc (gl_dma_alloc->ion_allocator, size, mem->params);
+ 
+   if (!mem->dma) {
+-    GST_CAT_ERROR (GST_CAT_GL_DMA_MEMORY, "Can't allocate dma memory size %d",
++    GST_CAT_ERROR (GST_CAT_GL_DMA_MEMORY, "Can't allocate dma memory size %" G_GSIZE_FORMAT,
+         size);
+     g_free (mem);
+     return NULL;
+@@ -262,7 +261,7 @@ gst_gl_memory_dma_buffer_to_gstbuffer (GstGLContext * ctx, GstVideoInfo * info,
+   gst_gl_context_thread_add (ctx, (GstGLContextThreadFunc) _finish_texture,
+       NULL);
+ 
+-  glmem = gst_buffer_peek_memory (glbuf, 0);
++  glmem = (GstGLMemoryDMA *) gst_buffer_peek_memory (glbuf, 0);
+ 
+   buf = gst_buffer_new ();
+   gst_buffer_append_memory (buf, (GstMemory *) glmem->dma);
+-- 
+2.43.0
+

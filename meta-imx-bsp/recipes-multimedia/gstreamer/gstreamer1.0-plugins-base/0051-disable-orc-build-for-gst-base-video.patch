@@ -1,0 +1,32 @@
+From 4a50b9a740e3736a7364d84c4ed046fe902daf84 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 29 Oct 2020 10:42:38 +0800
+Subject: [PATCH 51/91] disable orc build for gst-base-video
+
+Upstream-Status: Pending
+Signed-off-by: Haihua Hu <jared.hu@nxp.com>
+
+Conflicts:
+	gst-libs/gst/video/meson.build
+(cherry picked from commit 6cfc332e6433a69ef04388da105b2fbc27b9b2c7)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/video/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/video/meson.build b/gst-libs/gst/video/meson.build
+index 1b492fd..da9ff3a 100644
+--- a/gst-libs/gst/video/meson.build
++++ b/gst-libs/gst/video/meson.build
+@@ -138,7 +138,7 @@ endif
+ 
+ gstvideo = library('gstvideo-@0@'.format(api_version),
+   video_sources, gstvideo_h, gstvideo_c, orc_c, orc_h,
+-  c_args : gst_plugins_base_args + ['-DBUILDING_GST_VIDEO', '-DG_LOG_DOMAIN="GStreamer-Video"'],
++  c_args : gst_plugins_base_args + ['-DBUILDING_GST_VIDEO', '-DDISABLE_ORC', '-DG_LOG_DOMAIN="GStreamer-Video"'],
+   include_directories: [configinc, libsinc],
+   version : libversion,
+   soversion : soversion,
+-- 
+2.43.0
+

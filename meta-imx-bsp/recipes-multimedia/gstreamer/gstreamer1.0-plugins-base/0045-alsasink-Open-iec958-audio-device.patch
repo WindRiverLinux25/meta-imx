@@ -1,0 +1,43 @@
+From f9efff48d51fdd0775d36e37d69608f2ed5c1c2d Mon Sep 17 00:00:00 2001
+From: Lyon Wang <lyon.wang@nxp.com>
+Date: Thu, 21 Jun 2018 15:32:04 +0800
+Subject: [PATCH 45/91] alsasink: Open iec958 audio device
+
+- Our audio driver not support open device
+with AES parameter, so just use hw: device name
+- i.mx specific for audio passthrough
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=757258
+
+Signed-off-by: Lyon Wang <lyon.wang@nxp.com>
+(cherry picked from commit 91a02413e3e90c2c325f8b2470597ebb8659174f)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/alsa/gstalsa.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/ext/alsa/gstalsa.c b/ext/alsa/gstalsa.c
+index c835168..4d9b422 100644
+--- a/ext/alsa/gstalsa.c
++++ b/ext/alsa/gstalsa.c
+@@ -666,12 +666,14 @@ gst_alsa_open_iec958_pcm (GstObject * obj, gchar * device)
+    * SPDIF_CON: Non-audio flag set:
+    *    spdif:{AES0 0x2 AES1 0x82 AES2 0x0 AES3 0x2}
+    */
+-  sprintf (devstr,
++/*  sprintf (devstr,
+       "%s:{AES0 0x%02x AES1 0x%02x AES2 0x%02x AES3 0x%02x}",
+       device,
+       IEC958_AES0_CON_EMPHASIS_NONE | IEC958_AES0_NONAUDIO,
+       IEC958_AES1_CON_ORIGINAL | IEC958_AES1_CON_PCM_CODER,
+-      0, IEC958_AES3_CON_FS_48000);
++      0, IEC958_AES3_CON_FS_48000);*/
++
++  sprintf (devstr, "%s", device);
+ 
+   GST_DEBUG_OBJECT (obj, "Generated device string \"%s\"", devstr);
+   iec958_pcm_name = devstr;
+-- 
+2.43.0
+

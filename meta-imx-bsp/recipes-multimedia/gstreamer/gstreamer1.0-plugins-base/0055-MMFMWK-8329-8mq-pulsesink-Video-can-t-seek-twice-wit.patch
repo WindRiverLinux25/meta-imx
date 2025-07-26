@@ -1,0 +1,40 @@
+From f2cf6a7db19a98bbb8df0aadf949c6599a2e99e5 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 5 Apr 2019 17:35:09 +0800
+Subject: [PATCH 55/91] MMFMWK-8329 [8mq]pulsesink: Video can't seek twice
+ within short time
+
+The clip's interleave depth is rather big which made audio queue of multiqueue is empty while
+video queue is full. So enlarge the max-size-bytes from 2M to 10M to avoid preroll fail.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+
+Conflicts:
+	gst/playback/gstdecodebin2.c
+(cherry picked from commit 64ac77aa3d4a2b58764bcc10596c7bdb69d470e8)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstdecodebin2.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstdecodebin2.c b/gst/playback/gstdecodebin2.c
+index 9247625..8f3bf00 100644
+--- a/gst/playback/gstdecodebin2.c
++++ b/gst/playback/gstdecodebin2.c
+@@ -248,7 +248,10 @@ enum
+ 
+ /* when playing, keep a max of 8MB of data but try to keep the number of buffers
+  * as low as possible (try to aim for 5 buffers) */
+-#define AUTO_PLAY_SIZE_BYTES        8 * 1024 * 1024
++
++/* enlarge the max-size-bytes to 10M to avoid file-based mode and
++ * long-depth interleaved stream preroll fail. */
++#define AUTO_PLAY_SIZE_BYTES        10 * 1024 * 1024
+ #define AUTO_PLAY_SIZE_BUFFERS      5
+ #define AUTO_PLAY_SIZE_TIME         0
+ 
+-- 
+2.43.0
+

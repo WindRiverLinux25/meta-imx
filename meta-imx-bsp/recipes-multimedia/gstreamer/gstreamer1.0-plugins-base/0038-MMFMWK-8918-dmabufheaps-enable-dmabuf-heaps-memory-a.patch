@@ -1,0 +1,50 @@
+From bc42868ea577677797a793636045e43cae2309b7 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Wed, 23 Dec 2020 13:19:24 +0800
+Subject: [PATCH 38/91] MMFMWK-8918 [dmabufheaps] enable dmabuf heaps memory
+ allocator.
+
+Remove DMABUF SYNC temporarily as it will cause issue.
+
+Upstream-Status: Pending
+
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit 6dd8dc7566a76354e3283dc4e2dcecae817bf20e)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/allocators/gstdmabuf.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/gst-libs/gst/allocators/gstdmabuf.c b/gst-libs/gst/allocators/gstdmabuf.c
+index e163b72..7e42b06 100644
+--- a/gst-libs/gst/allocators/gstdmabuf.c
++++ b/gst-libs/gst/allocators/gstdmabuf.c
+@@ -70,9 +70,9 @@ gst_dmabuf_mem_map (GstMemory * gmem, GstMapInfo * info, gsize maxsize)
+ #ifdef HAVE_LINUX_DMA_BUF_H
+   if (ret) {
+     struct dma_buf_phys dma_phys;
+-    if (ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_SYNC, &sync) < 0)
+-      GST_WARNING_OBJECT (allocator, "Failed to synchronize DMABuf: %s (%i)",
+-          g_strerror (errno), errno);
++    /* if (ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_SYNC, &sync) < 0)
++       GST_WARNING_OBJECT (allocator, "Failed to synchronize DMABuf: %s (%i)",
++       g_strerror (errno), errno); */
+     ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_PHYS, &dma_phys);
+   }
+ #endif
+@@ -94,9 +94,9 @@ gst_dmabuf_mem_unmap (GstMemory * gmem, GstMapInfo * info)
+   if (info->flags & GST_MAP_WRITE)
+     sync.flags |= DMA_BUF_SYNC_WRITE;
+ 
+-  if (ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_SYNC, &sync) < 0)
+-    GST_WARNING_OBJECT (allocator, "Failed to synchronize DMABuf: %s (%i)",
+-        g_strerror (errno), errno);
++  /* if (ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_SYNC, &sync) < 0)
++     GST_WARNING_OBJECT (allocator, "Failed to synchronize DMABuf: %s (%i)",
++     g_strerror (errno), errno); */
+   ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_PHYS, &dma_phys);
+ #else
+   GST_WARNING_OBJECT (allocator, "Using DMABuf without synchronization.");
+-- 
+2.43.0
+

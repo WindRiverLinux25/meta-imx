@@ -1,0 +1,156 @@
+From a614fef1e3c1cd318cd864280c99e689f4d83fb6 Mon Sep 17 00:00:00 2001
+From: Arnaud Pouliquen <arnaud.pouliquen@st.com>
+Date: Tue, 3 Nov 2015 14:13:10 +0100
+Subject: [PATCH 42/91] alsasink: fix iec958 format detection
+
+Add specific function that first close the current pcm device
+before trying to re-open it with AES parameters.
+https://bugzilla.gnome.org/show_bug.cgi?id=757258
+
+Upstream-Status: Pending
+
+Signed-off-by: Arnaud Pouliquen <arnaud.pouliquen@st.com>
+(cherry picked from commit a2177475f7ea2d1170785e11971b1da8c510367f)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/alsa/gstalsa.c     | 61 ++++++++++++++++++++++++++++++++----------
+ ext/alsa/gstalsa.h     |  4 +++
+ ext/alsa/gstalsasink.c | 11 +++++++-
+ 3 files changed, 61 insertions(+), 15 deletions(-)
+
+diff --git a/ext/alsa/gstalsa.c b/ext/alsa/gstalsa.c
+index e22eec3..c835168 100644
+--- a/ext/alsa/gstalsa.c
++++ b/ext/alsa/gstalsa.c
+@@ -700,7 +700,6 @@ gst_alsa_probe_supported_formats (GstObject * obj, gchar * device,
+     snd_pcm_t * handle, const GstCaps * template_caps)
+ {
+   snd_pcm_hw_params_t *hw_params;
+-  snd_pcm_stream_t stream_type;
+   GstCaps *caps;
+   GstCaps *dsd_caps;
+   gint err;
+@@ -709,8 +708,6 @@ gst_alsa_probe_supported_formats (GstObject * obj, gchar * device,
+   if ((err = snd_pcm_hw_params_any (handle, hw_params)) < 0)
+     goto error;
+ 
+-  stream_type = snd_pcm_stream (handle);
+-
+   /* Try detecting PCM */
+ 
+   caps = gst_alsa_detect_formats (obj, hw_params,
+@@ -761,17 +758,6 @@ gst_alsa_probe_supported_formats (GstObject * obj, gchar * device,
+     GST_INFO_OBJECT (obj, "DSD support not detected");
+   }
+ 
+-  /* Try opening IEC958 device to see if we can support that format (playback
+-   * only for now but we could add SPDIF capture later) */
+-  if (stream_type == SND_PCM_STREAM_PLAYBACK) {
+-    snd_pcm_t *pcm = gst_alsa_open_iec958_pcm (obj, device);
+-
+-    if (G_LIKELY (pcm)) {
+-      gst_caps_append (caps, gst_caps_from_string (PASSTHROUGH_CAPS));
+-      snd_pcm_close (pcm);
+-    }
+-  }
+-
+   snd_pcm_hw_params_free (hw_params);
+   return caps;
+ 
+@@ -791,6 +777,53 @@ subroutine_error:
+   }
+ }
+ 
++/*
++ * gst_alsa_probe_supported_formats:
++ *
++ * Takes the template caps and returns the subset which is actually
++ * supported by this device.
++ */
++gboolean gst_alsa_iec958_formats_supported (GstObject * obj, gchar * device,
++    snd_pcm_t ** handle)
++{
++  snd_pcm_stream_t stream_type;
++  gboolean supported = FALSE;
++  snd_pcm_t *pcm;
++  gint err;
++
++  /* Try opening IEC958 device to see if we can support that format (playback
++   * only for now but we could add SPDIF capture later) */
++  stream_type = snd_pcm_stream (*handle);
++  if (stream_type == SND_PCM_STREAM_PLAYBACK) {
++    /* Close the exiting device to re-open it as iec958 device*/
++    err = snd_pcm_close(*handle);
++    if (G_UNLIKELY (err < 0)) {
++      GST_DEBUG_OBJECT (obj, " failed closing alsa device: %s",
++        snd_strerror (err));
++      return FALSE;
++    }
++
++    pcm = gst_alsa_open_iec958_pcm(GST_OBJECT (obj), device);
++    if (G_LIKELY (pcm)) {
++      supported = TRUE;
++      snd_pcm_close (pcm);
++    }
++
++    /* Reopen device in raw audio mode*/
++    err = snd_pcm_open (handle, device, SND_PCM_STREAM_PLAYBACK,
++        SND_PCM_NONBLOCK);
++    if (G_UNLIKELY (err < 0)) {
++       GST_DEBUG_OBJECT (obj, "failed re-opening alsa device: %s",
++           snd_strerror (err));
++    }
++    return supported;
++  }
++
++  GST_DEBUG_OBJECT (obj, "only supported for playback");
++  return FALSE;
++
++}
++
+ /* returns the card name when the device number is unknown or -1 */
+ static gchar *
+ gst_alsa_find_device_name_no_handle (GstObject * obj, const gchar * devcard,
+diff --git a/ext/alsa/gstalsa.h b/ext/alsa/gstalsa.h
+index 46324a3..d9e6284 100644
+--- a/ext/alsa/gstalsa.h
++++ b/ext/alsa/gstalsa.h
+@@ -58,6 +58,10 @@ GstCaps * gst_alsa_probe_supported_formats (GstObject      * obj,
+                                             snd_pcm_t      * handle,
+                                             const GstCaps  * template_caps);
+ 
++gboolean gst_alsa_iec958_formats_supported (GstObject * obj,
++                                            gchar * device,
++                                            snd_pcm_t ** handle);
++
+ gchar   * gst_alsa_find_device_name (GstObject        * obj,
+                                      const gchar      * device,
+                                      snd_pcm_t        * handle,
+diff --git a/ext/alsa/gstalsasink.c b/ext/alsa/gstalsasink.c
+index 259f0be..9a356e0 100644
+--- a/ext/alsa/gstalsasink.c
++++ b/ext/alsa/gstalsasink.c
+@@ -329,10 +329,19 @@ gst_alsasink_getcaps (GstBaseSink * bsink, GstCaps * filter)
+       sink->handle, templ_caps);
+   gst_caps_unref (templ_caps);
+ 
++  /* Try opening IEC958 device to see if we can support that format (playback
++   * only for now but we could add SPDIF capture later)
++   */
++
++  if (gst_alsa_iec958_formats_supported(GST_OBJECT (sink), sink->device,
++    &sink->handle) == TRUE) {
++    GST_LOG_OBJECT (sink, "Add pass-through capabilities");
++    gst_caps_append (caps, gst_caps_from_string (PASSTHROUGH_CAPS));
++  }
++
+   if (caps) {
+     sink->cached_caps = gst_caps_ref (caps);
+   }
+-
+   GST_OBJECT_UNLOCK (sink);
+ 
+   GST_INFO_OBJECT (sink, "returning caps %" GST_PTR_FORMAT, caps);
+-- 
+2.43.0
+

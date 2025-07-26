@@ -1,0 +1,34 @@
+From af5d8b8c6d41c7c3b114589f3ddf21da5d8155ac Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Mon, 8 Apr 2024 16:38:43 +0900
+Subject: [PATCH 72/91] MGS-7584 glupload: set default alignment based on
+ platform
+
+For Mali GPU, it needs 32 bytes alignment for buffer when
+import dmabuf
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/gstglupload.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/gst-libs/gst/gl/gstglupload.c b/gst-libs/gst/gl/gstglupload.c
+index 96b554d..afdfd77 100644
+--- a/gst-libs/gst/gl/gstglupload.c
++++ b/gst-libs/gst/gl/gstglupload.c
+@@ -81,7 +81,11 @@
+ #define USING_GLES2(context) (gst_gl_context_check_gl_version (context, GST_GL_API_GLES2, 2, 0))
+ #define USING_GLES3(context) (gst_gl_context_check_gl_version (context, GST_GL_API_GLES2, 3, 0))
+ 
++#if GST_GL_HAVE_VIV_DIRECTVIV
+ #define DEFAULT_ALIGN 16
++#else
++#define DEFAULT_ALIGN 32
++#endif
+ 
+ GST_DEBUG_CATEGORY_STATIC (gst_gl_upload_debug);
+ #define GST_CAT_DEFAULT gst_gl_upload_debug
+-- 
+2.43.0
+

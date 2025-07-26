@@ -1,0 +1,39 @@
+From 854066485a39afad79e8dfe76bbc63b040a300e2 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 8 Oct 2024 13:48:48 +0800
+Subject: [PATCH 83/91] MMFMWK-9426 decodebin3: fix rtsp stream random playback
+ fail with "No suitable plugins found"
+
+1.24.7 performs stream_reconfigure in advance if all streams are
+present for that collection during STREAM_START. rtsp stream has
+respective collection for video and audio, if do stream_recofigure
+of stream-start before receiving caps event, decodebin3 cannot find
+decoder for "application/x-rtp" then report missing plugin error.
+
+For collection that has only one stream, make a workaround to let
+decodebin3 fallback to do stream_recofigure after receiving caps
+event like 1.24.0.
+
+Upstream-Status: Pending
+Issue: https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/3859
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstdecodebin3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstdecodebin3.c b/gst/playback/gstdecodebin3.c
+index 24de8c4..a0c8736 100644
+--- a/gst/playback/gstdecodebin3.c
++++ b/gst/playback/gstdecodebin3.c
+@@ -3419,7 +3419,7 @@ update_stream_presence (GstDecodebin3 * dbin, DecodebinCollection * collection)
+     return;
+   }
+ 
+-  if (g_list_length (dbin->slots) !=
++  if (g_list_length (dbin->slots) == 1 || g_list_length (dbin->slots) !=
+       gst_stream_collection_get_size (collection->collection)) {
+     collection->all_streams_present = FALSE;
+     return;
+-- 
+2.43.0
+

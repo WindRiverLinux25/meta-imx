@@ -1,0 +1,46 @@
+From eeca2472b203d7e1052cc7ba146e4b648ed97d68 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Fri, 10 May 2019 16:34:41 +0800
+Subject: [PATCH 48/91] MMFMWK-8478 alsasink: fix eac3 passthrough playback
+
+eac3 caps alignment set to iec61937, correct iec61937 check when payload
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/merge_requests/234
+
+(cherry picked from commit fd69bc66fc2b87d1b38aaa1dbfdeff09a161919b)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/alsa/gstalsa.h                    | 2 +-
+ gst-libs/gst/audio/gstaudioiec61937.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/ext/alsa/gstalsa.h b/ext/alsa/gstalsa.h
+index d9e6284..82a01f6 100644
+--- a/ext/alsa/gstalsa.h
++++ b/ext/alsa/gstalsa.h
+@@ -41,7 +41,7 @@
+ 
+ #define PASSTHROUGH_CAPS \
+     "audio/x-ac3, framed = (boolean) true;" \
+-    "audio/x-eac3, framed = (boolean) true; " \
++    "audio/x-eac3, framed = (boolean) true, alignment = (string) iec61937; "\
+     "audio/x-dts, framed = (boolean) true, " \
+       "block-size = (int) { 512, 1024, 2048 }; " \
+     "audio/mpeg, mpegversion = (int) 1, " \
+diff --git a/gst-libs/gst/audio/gstaudioiec61937.c b/gst-libs/gst/audio/gstaudioiec61937.c
+index a192913..c2ee4d6 100644
+--- a/gst-libs/gst/audio/gstaudioiec61937.c
++++ b/gst-libs/gst/audio/gstaudioiec61937.c
+@@ -209,7 +209,7 @@ gst_audio_iec61937_payload (const guint8 * src, guint src_n, guint8 * dst,
+ 
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_EAC3:
+     {
+-      if (g_str_equal (caps_get_string_field (spec->caps, "alignment"),
++      if (!g_str_equal (caps_get_string_field (spec->caps, "alignment"),
+               "iec61937"))
+         return FALSE;
+ 
+-- 
+2.43.0
+

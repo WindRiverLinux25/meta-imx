@@ -1,0 +1,31 @@
+From 664f8bc6bc0ac09d33ccda53b4e39a857d309478 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 11 Apr 2023 15:51:13 +0800
+Subject: [PATCH 64/91] LF-8635 decodebin3: set min_interleave of multiqueue to
+ 5s+
+
+enlarge min_interleave to workaround the issue that pipeline will
+hang when AV interleave is big
+
+Upstream-Status: Pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstdecodebin3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstdecodebin3.c b/gst/playback/gstdecodebin3.c
+index 2e37851..c06a838 100644
+--- a/gst/playback/gstdecodebin3.c
++++ b/gst/playback/gstdecodebin3.c
+@@ -1421,7 +1421,7 @@ gst_decodebin3_update_min_interleave (GstDecodebin3 * dbin)
+     return;
+ 
+   /* Make sure we keep an extra overhead */
+-  max_latency += 100 * GST_MSECOND;
++  max_latency += 5 * GST_SECOND;
+   if (max_latency == dbin->current_mq_min_interleave)
+     return;
+ 
+-- 
+2.43.0
+

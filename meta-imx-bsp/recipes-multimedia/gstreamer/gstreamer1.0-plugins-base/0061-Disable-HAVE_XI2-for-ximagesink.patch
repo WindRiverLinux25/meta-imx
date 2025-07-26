@@ -1,0 +1,33 @@
+From c28af355d940c56a97432b6886ef73c3a69c0089 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 16 Feb 2023 09:13:35 +0800
+Subject: [PATCH 61/91] Disable HAVE_XI2 for ximagesink
+
+Config HAVE_XI2 is added in below 1.22 MR
+https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/1633,
+but it causes error "X Error of failed request: XInputExtension".
+So remove this config.
+
+Upstream-Status: Pending
+
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ sys/meson.build | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/sys/meson.build b/sys/meson.build
+index a93e075..b7dcd00 100644
+--- a/sys/meson.build
++++ b/sys/meson.build
+@@ -4,7 +4,6 @@ if x11_dep.found()
+   xshm_dep = dependency('xext', required : get_option('xshm'))
+   xi_dep = dependency('xi', required : get_option('xi'))
+   core_conf.set('HAVE_XSHM', xshm_dep.found())
+-  core_conf.set('HAVE_XI2', xi_dep.found())
+ 
+   subdir('ximage')
+   subdir('xvimage')
+-- 
+2.43.0
+

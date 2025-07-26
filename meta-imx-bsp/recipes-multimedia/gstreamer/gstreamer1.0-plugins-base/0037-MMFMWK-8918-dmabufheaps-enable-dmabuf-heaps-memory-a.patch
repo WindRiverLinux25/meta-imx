@@ -1,0 +1,63 @@
+From 7dd90018ad0b023871a3e66c0efd12369766d200 Mon Sep 17 00:00:00 2001
+From: Bing Song <bing.song@nxp.com>
+Date: Mon, 21 Dec 2020 17:10:56 +0800
+Subject: [PATCH 37/91] MMFMWK-8918 [dmabufheaps] enable dmabuf heaps memory
+ allocator.
+
+Add one workaround for cache flush by get physical address as
+the buffer get physical address can't be flush rightly.
+
+Upstream-Status: Pending
+
+Signed-off-by: Bing Song <bing.song@nxp.com>
+(cherry picked from commit d6ad337837085f8dc1ef29eae6844edbf3a3915f)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/allocators/gstdmabuf.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/allocators/gstdmabuf.c b/gst-libs/gst/allocators/gstdmabuf.c
+index 15de4c8..e163b72 100644
+--- a/gst-libs/gst/allocators/gstdmabuf.c
++++ b/gst-libs/gst/allocators/gstdmabuf.c
+@@ -69,9 +69,11 @@ gst_dmabuf_mem_map (GstMemory * gmem, GstMapInfo * info, gsize maxsize)
+ 
+ #ifdef HAVE_LINUX_DMA_BUF_H
+   if (ret) {
++    struct dma_buf_phys dma_phys;
+     if (ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_SYNC, &sync) < 0)
+       GST_WARNING_OBJECT (allocator, "Failed to synchronize DMABuf: %s (%i)",
+           g_strerror (errno), errno);
++    ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_PHYS, &dma_phys);
+   }
+ #endif
+ 
+@@ -84,6 +86,7 @@ gst_dmabuf_mem_unmap (GstMemory * gmem, GstMapInfo * info)
+   GstAllocator *allocator = gmem->allocator;
+ #ifdef HAVE_LINUX_DMA_BUF_H
+   struct dma_buf_sync sync = { DMA_BUF_SYNC_END };
++  struct dma_buf_phys dma_phys;
+ 
+   if (info->flags & GST_MAP_READ)
+     sync.flags |= DMA_BUF_SYNC_READ;
+@@ -94,6 +97,7 @@ gst_dmabuf_mem_unmap (GstMemory * gmem, GstMapInfo * info)
+   if (ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_SYNC, &sync) < 0)
+     GST_WARNING_OBJECT (allocator, "Failed to synchronize DMABuf: %s (%i)",
+         g_strerror (errno), errno);
++  ioctl (gst_fd_memory_get_fd (gmem), DMA_BUF_IOCTL_PHYS, &dma_phys);
+ #else
+   GST_WARNING_OBJECT (allocator, "Using DMABuf without synchronization.");
+ #endif
+@@ -156,7 +160,8 @@ gst_dmabuf_allocator_alloc (GstAllocator * allocator, gint fd, gsize size)
+ {
+   g_return_val_if_fail (GST_IS_DMABUF_ALLOCATOR (allocator), NULL);
+ 
+-  return gst_fd_allocator_alloc (allocator, fd, size, GST_FD_MEMORY_FLAG_KEEP_MAPPED);
++  return gst_fd_allocator_alloc (allocator, fd, size,
++      GST_FD_MEMORY_FLAG_KEEP_MAPPED);
+ }
+ 
+ /**
+-- 
+2.43.0
+

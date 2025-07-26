@@ -1,0 +1,62 @@
+From bcc9dc3d6a9ae91feb5e30a1b6d644d0dbccf3c2 Mon Sep 17 00:00:00 2001
+From: Arnaud Pouliquen <arnaud.pouliquen@st.com>
+Date: Fri, 6 Nov 2015 10:01:50 +0100
+Subject: [PATCH 43/91] iec61937: force hw_param channels to stereo
+
+In case of pass-through, iec frames are sent over a stereo PCM
+stream. So alsa device should be configured with channels = 2.
+This is needed to be compatible with SPDIF electrical/optical output
+that supports only stereo in PCM mode and up to 8 channels in iec61937 mode.
+
+Upstream-Status: Pending
+
+Signed-off-by: Arnaud Pouliquen <arnaud.pouliquen@st.com>
+(cherry picked from commit a6c5c17c00d03f1a11c6cd44c678064740b2fd1e)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/alsa/gstalsasink.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/ext/alsa/gstalsasink.c b/ext/alsa/gstalsasink.c
+index 9a356e0..12752eb 100644
+--- a/ext/alsa/gstalsasink.c
++++ b/ext/alsa/gstalsasink.c
+@@ -841,6 +841,7 @@ alsasink_parse_spec (GstAlsaSink * alsa, GstAudioRingBufferSpec * spec)
+         default:
+           goto error;
+       }
++      alsa->channels = GST_AUDIO_INFO_CHANNELS (&spec->info);
+       break;
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_DSD:
+       switch (GST_AUDIO_RING_BUFFER_SPEC_DSD_FORMAT (spec)) {
+@@ -865,9 +866,11 @@ alsasink_parse_spec (GstAlsaSink * alsa, GstAudioRingBufferSpec * spec)
+       break;
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_A_LAW:
+       alsa->format = SND_PCM_FORMAT_A_LAW;
++      alsa->channels = GST_AUDIO_INFO_CHANNELS (&spec->info);
+       break;
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_MU_LAW:
+       alsa->format = SND_PCM_FORMAT_MU_LAW;
++      alsa->channels = GST_AUDIO_INFO_CHANNELS (&spec->info);
+       break;
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_AC3:
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_EAC3:
+@@ -875,13 +878,14 @@ alsasink_parse_spec (GstAlsaSink * alsa, GstAudioRingBufferSpec * spec)
+     case GST_AUDIO_RING_BUFFER_FORMAT_TYPE_MPEG:
+       alsa->format = SND_PCM_FORMAT_S16_BE;
+       alsa->iec958 = TRUE;
++      /* Set channels to stereo as iec playload are rendered on a stereo stream */
++      alsa->channels = 2;
+       break;
+     default:
+       goto error;
+ 
+   }
+   alsa->rate = GST_AUDIO_INFO_RATE (&spec->info);
+-  alsa->channels = GST_AUDIO_INFO_CHANNELS (&spec->info);
+   alsa->buffer_time = spec->buffer_time;
+   alsa->period_time = spec->latency_time;
+   alsa->access = SND_PCM_ACCESS_RW_INTERLEAVED;
+-- 
+2.43.0
+

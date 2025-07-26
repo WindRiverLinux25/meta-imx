@@ -1,0 +1,25 @@
+From eb353b7212432f28bff8fbf4dd650e80bca1e693 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 25 Dec 2024 12:19:25 +0900
+Subject: [PATCH 91/91] update release location in SCR to correct URL
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ SCR.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/SCR.txt b/SCR.txt
+index c441887..99be41f 100644
+--- a/SCR.txt
++++ b/SCR.txt
+@@ -4,6 +4,6 @@ Outgoing License:            LGPL-2.1
+ License File:                LICENSE.txt
+ Type of Content:             source
+ Description and comments:    Open Source Multimedia Farmework
+-Release Location:            https://github.com/nxp-imx/gstreamer -b lf-6.12.3-1.0.0
++Release Location:            https://github.com/nxp-imx/gst-plugins-base -b lf-6.12.3-1.0.0
+ Origin:                      NXP (LGPL-2.1)
+                              GStreamer (LGPL-2.1+) - http://gstreamer.freedesktop.org/src/gstreamer/
+-- 
+2.43.0
+

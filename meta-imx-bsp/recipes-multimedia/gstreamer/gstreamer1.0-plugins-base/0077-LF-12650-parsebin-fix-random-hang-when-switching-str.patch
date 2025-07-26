@@ -1,0 +1,37 @@
+From 111efd373fd4f399ebff6dc1060800c03e401ede Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Mon, 8 Jul 2024 09:31:10 +0800
+Subject: [PATCH 77/91] LF-12650 parsebin: fix random hang when switching
+ stream
+
+Upstream-Status: Pending
+
+Parsepad block id may have been added by expose_pad() in chain_expose(),
+and removed after pads are added to parsebin. At this time, if expose_pad
+again, the block id is added and has no chance to remove, then
+mpegaudioparse waits unblocking when pushing the first buffer downstream.
+It causes hang. So no need to expose_pad if the parsepad has been exposed.
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstparsebin.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstparsebin.c b/gst/playback/gstparsebin.c
+index 4f9c19a..6ad9e89 100644
+--- a/gst/playback/gstparsebin.c
++++ b/gst/playback/gstparsebin.c
+@@ -1944,7 +1944,10 @@ connect_pad (GstParseBin * parsebin, GstElement * src, GstParsePad * parsepad,
+       case GST_AUTOPLUG_SELECT_EXPOSE:
+         GST_DEBUG_OBJECT (parsebin, "autoplug select requested expose");
+         /* expose the pad, we don't have the source element */
+-        expose_pad (parsebin, src, parsepad, pad, caps, chain);
++        if (!parsepad->exposed)
++          expose_pad (parsebin, src, parsepad, pad, caps, chain);
++        else
++          GST_DEBUG_OBJECT (parsebin, "pad is already exposed, skip");
+         res = TRUE;
+         goto beach;
+       case GST_AUTOPLUG_SELECT_SKIP:
+-- 
+2.43.0
+

@@ -1,0 +1,49 @@
+From 11a9552d99e608f5f063965e5ff619022388b658 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 11 Feb 2022 13:47:15 +0800
+Subject: [PATCH 52/91] Revert "meson: Mark newly fdkaac/ogg/vorbis as allow
+ fallback"
+
+This reverts commit 38c7a7749484718205c71a236c18aca51a9ac924.
+
+Upstream-Status: Pending
+Signed-off-by: Hou Qi <qi.hou@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/ogg/meson.build    | 2 +-
+ ext/vorbis/meson.build | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/ext/ogg/meson.build b/ext/ogg/meson.build
+index 70fff43..825f79f 100644
+--- a/ext/ogg/meson.build
++++ b/ext/ogg/meson.build
+@@ -10,7 +10,7 @@ ogg_sources = [
+   'vorbis_parse.c',
+ ]
+ 
+-ogg_dep = dependency('ogg', allow_fallback: true, version : '>=1.0', required : get_option('ogg'))
++ogg_dep = dependency('ogg', version : '>=1.0', required : get_option('ogg'))
+ core_conf.set('HAVE_OGG', ogg_dep.found())
+ 
+ if ogg_dep.found()
+diff --git a/ext/vorbis/meson.build b/ext/vorbis/meson.build
+index 1aff8a9..7d70f84 100644
+--- a/ext/vorbis/meson.build
++++ b/ext/vorbis/meson.build
+@@ -17,9 +17,9 @@ vorbisidec_sources = [
+   'gstvorbiscommon.c',
+ ]
+ 
+-vorbis_dep = dependency('vorbis', version : '>= 1.3.1', allow_fallback: true, required : get_option('vorbis'))
+-vorbisenc_dep = dependency('vorbisenc', version : '>= 1.3.1', allow_fallback: true, required : get_option('vorbis'))
+-vorbisidec_dep = dependency('vorbisidec', allow_fallback: true, required : get_option('tremor'))
++vorbis_dep = dependency('vorbis', version : '>= 1.3.1', required : get_option('vorbis'))
++vorbisenc_dep = dependency('vorbisenc', version : '>= 1.3.1', required : get_option('vorbis'))
++vorbisidec_dep = dependency('vorbisidec', required : get_option('tremor'))
+ 
+ if vorbis_dep.found()
+   vorbis_deps = [vorbis_dep]
+-- 
+2.43.0
+

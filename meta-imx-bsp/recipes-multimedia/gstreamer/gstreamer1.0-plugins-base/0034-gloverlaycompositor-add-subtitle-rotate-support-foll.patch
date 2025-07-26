@@ -1,0 +1,146 @@
+From 1244cebbf214b83f8bdb0825d8f6b19e39e79315 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 12 Apr 2018 16:22:25 +0800
+Subject: [PATCH 34/91] gloverlaycompositor: add subtitle rotate support follow
+ video
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=790470
+
+(cherry picked from commit 48513da2bacabaaf3dad92f6cc96c20d387c3356)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/gl/gstglimagesink.c                  | 33 ++++++++++++------------
+ ext/gl/gstgloverlaycompositorelement.c   |  2 +-
+ gst-libs/gst/gl/gstgloverlaycompositor.c | 11 ++++++--
+ gst-libs/gst/gl/gstgloverlaycompositor.h |  2 +-
+ 4 files changed, 27 insertions(+), 21 deletions(-)
+
+diff --git a/ext/gl/gstglimagesink.c b/ext/gl/gstglimagesink.c
+index d289e0e..36968d4 100644
+--- a/ext/gl/gstglimagesink.c
++++ b/ext/gl/gstglimagesink.c
+@@ -2396,6 +2396,9 @@ gst_glimage_sink_on_draw (GstGLImageSink * gl_sink)
+   GstGLWindow *window = NULL;
+   gboolean do_redisplay = FALSE;
+   GstSample *sample = NULL;
++  GstVideoAffineTransformationMeta *af_meta;
++  gfloat matrix[16];
++
+   guint gl_target = gst_gl_texture_target_to_gl (gl_sink->texture_target);
+ 
+   g_return_if_fail (GST_IS_GLIMAGE_SINK (gl_sink));
+@@ -2525,27 +2528,23 @@ gst_glimage_sink_on_draw (GstGLImageSink * gl_sink)
+     gl->ActiveTexture (GL_TEXTURE0);
+     gl->BindTexture (gl_target, gl_sink->redisplay_texture);
+     gst_gl_shader_set_uniform_1i (gl_sink->redisplay_shader, "tex", 0);
+-    {
+-      GstVideoAffineTransformationMeta *af_meta;
+-      gfloat matrix[16];
+ 
+-      af_meta =
+-          gst_buffer_get_video_affine_transformation_meta
+-          (gl_sink->stored_buffer[0]);
++    af_meta =
++        gst_buffer_get_video_affine_transformation_meta
++        (gl_sink->stored_buffer[0]);
+ 
+-      if (gl_sink->transform_matrix) {
+-        gfloat tmp[16];
++    if (gl_sink->transform_matrix) {
++      gfloat tmp[16];
+ 
+-        gst_gl_get_affine_transformation_meta_as_ndc (af_meta, tmp);
+-        gst_gl_multiply_matrix4 (tmp, gl_sink->transform_matrix, matrix);
+-      } else {
+-        gst_gl_get_affine_transformation_meta_as_ndc (af_meta, matrix);
+-      }
+-
+-      gst_gl_shader_set_uniform_matrix_4fv (gl_sink->redisplay_shader,
+-          "u_transformation", 1, FALSE, matrix);
++      gst_gl_get_affine_transformation_meta_as_ndc (af_meta, tmp);
++      gst_gl_multiply_matrix4 (tmp, gl_sink->transform_matrix, matrix);
++    } else {
++      gst_gl_get_affine_transformation_meta_as_ndc (af_meta, matrix);
+     }
+ 
++    gst_gl_shader_set_uniform_matrix_4fv (gl_sink->redisplay_shader,
++        "u_transformation", 1, FALSE, matrix);
++
+     gl->DrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+ 
+     gl->BindTexture (gl_target, 0);
+@@ -2559,7 +2558,7 @@ gst_glimage_sink_on_draw (GstGLImageSink * gl_sink)
+     if (gl_sink->ignore_alpha)
+       gl->Disable (GL_BLEND);
+ 
+-    gst_gl_overlay_compositor_draw_overlays (gl_sink->overlay_compositor);
++    gst_gl_overlay_compositor_draw_overlays (gl_sink->overlay_compositor, matrix);
+   }
+   /* end default opengl scene */
+   window->is_drawing = FALSE;
+diff --git a/ext/gl/gstgloverlaycompositorelement.c b/ext/gl/gstgloverlaycompositorelement.c
+index 80ba9f3..ef49298 100644
+--- a/ext/gl/gstgloverlaycompositorelement.c
++++ b/ext/gl/gstgloverlaycompositorelement.c
+@@ -341,7 +341,7 @@ gst_gl_overlay_compositor_element_callback (GstGLFilter * filter,
+ 
+   GST_LOG_OBJECT (self, "drawing overlays");
+ 
+-  gst_gl_overlay_compositor_draw_overlays (self->overlay_compositor);
++  gst_gl_overlay_compositor_draw_overlays (self->overlay_compositor, NULL);
+ 
+   return TRUE;
+ }
+diff --git a/gst-libs/gst/gl/gstgloverlaycompositor.c b/gst-libs/gst/gl/gstgloverlaycompositor.c
+index cc1111e..6231a36 100644
+--- a/gst-libs/gst/gl/gstgloverlaycompositor.c
++++ b/gst-libs/gst/gl/gstgloverlaycompositor.c
+@@ -554,7 +554,10 @@ gst_gl_overlay_compositor_init_gl (GstGLContext * context,
+ 
+   if (!(compositor->shader =
+           gst_gl_shader_new_link_with_stages (context, &error,
+-              gst_glsl_stage_new_default_vertex (context),
++              gst_glsl_stage_new_with_string (context,
++                  GL_VERTEX_SHADER, GST_GLSL_VERSION_NONE,
++                  GST_GLSL_PROFILE_ES | GST_GLSL_PROFILE_COMPATIBILITY,
++                  gst_gl_shader_string_vertex_mat4_vertex_transform),
+               gst_glsl_stage_new_with_strings (context, GL_FRAGMENT_SHADER,
+                   GST_GLSL_VERSION_NONE,
+                   GST_GLSL_PROFILE_ES | GST_GLSL_PROFILE_COMPATIBILITY, 2,
+@@ -711,7 +714,7 @@ gst_gl_overlay_compositor_upload_overlays (GstGLOverlayCompositor * compositor,
+ }
+ 
+ void
+-gst_gl_overlay_compositor_draw_overlays (GstGLOverlayCompositor * compositor)
++gst_gl_overlay_compositor_draw_overlays (GstGLOverlayCompositor * compositor, gfloat *matrix)
+ {
+   const GstGLFuncs *gl = compositor->context->gl_vtable;
+   if (compositor->overlays != NULL) {
+@@ -723,6 +726,10 @@ gst_gl_overlay_compositor_draw_overlays (GstGLOverlayCompositor * compositor)
+     gl->ActiveTexture (GL_TEXTURE0);
+     gst_gl_shader_set_uniform_1i (compositor->shader, "tex", 0);
+ 
++    if (matrix)
++      gst_gl_shader_set_uniform_matrix_4fv (compositor->shader,
++          "u_transformation", 1, FALSE, matrix);
++
+     for (l = compositor->overlays; l != NULL; l = l->next) {
+       GstGLCompositionOverlay *overlay = (GstGLCompositionOverlay *) l->data;
+       GstVideoOverlayFormatFlags flags;
+diff --git a/gst-libs/gst/gl/gstgloverlaycompositor.h b/gst-libs/gst/gl/gstgloverlaycompositor.h
+index 705963e..1c6e72f 100644
+--- a/gst-libs/gst/gl/gstgloverlaycompositor.h
++++ b/gst-libs/gst/gl/gstgloverlaycompositor.h
+@@ -83,7 +83,7 @@ void gst_gl_overlay_compositor_upload_overlays (GstGLOverlayCompositor * composi
+         GstBuffer * buf);
+ 
+ GST_GL_API
+-void gst_gl_overlay_compositor_draw_overlays (GstGLOverlayCompositor * compositor);
++void gst_gl_overlay_compositor_draw_overlays (GstGLOverlayCompositor * compositor, gfloat * matrix);
+ 
+ GST_GL_API
+ GstCaps * gst_gl_overlay_compositor_add_caps(GstCaps * caps);
+-- 
+2.43.0
+

@@ -1,0 +1,37 @@
+From 82ee952414f6de1ebb8b584661e46b06250b36e9 Mon Sep 17 00:00:00 2001
+From: Chao Guo <chao.guo@nxp.com>
+Date: Tue, 24 Sep 2024 15:12:05 +0800
+Subject: [PATCH 88/91] MMFMWK-9419 glupload: Use info in in_caps to map video
+ frames When copying input buffer to dambuf
+
+When copying the input buffer to glupload dmabuf->inbuf, use the video info from in_caps to map video
+frame. Because the data in in_info will be replaced by the meta data from dmabuf->inbuf after copying.
+The in_info will not match the input buffer in next copy, causing core dump.
+
+Upstream-Status: Pending
+
+Signed-off-by: Chao Guo <chao.guo@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/gstglupload.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/gl/gstglupload.c b/gst-libs/gst/gl/gstglupload.c
+index a55c1e0..9e40b9a 100644
+--- a/gst-libs/gst/gl/gstglupload.c
++++ b/gst-libs/gst/gl/gstglupload.c
+@@ -1609,8 +1609,10 @@ _dma_buf_upload_accept (gpointer impl, GstBuffer * buffer, GstCaps * in_caps,
+   /* This will eliminate most non-dmabuf out there */
+   if (!gst_is_dmabuf_memory (gst_buffer_peek_memory (buffer, 0))) {
+     GstVideoFrame frame1, frame2;
++    GstVideoInfo map_in_info;
+ 
+-    gst_video_frame_map (&frame1, in_info, buffer, GST_MAP_READ);
++    gst_video_info_from_caps (&map_in_info, in_caps);
++    gst_video_frame_map (&frame1, &map_in_info, buffer, GST_MAP_READ);
+ 
+     if (!dmabuf->pool) {
+       gboolean ret;
+-- 
+2.43.0
+

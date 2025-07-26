@@ -1,0 +1,34 @@
+From 455c7e2773c4f8bad94376fb8aec63be283b9892 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 15 Oct 2020 16:47:21 +0800
+Subject: [PATCH 36/91] gl/viv-fb: install viv-fb header into include dir
+
+previous patch is in below link, but this change is
+missing on meson build
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=795499
+
+Conflicts:
+	gst-libs/gst/gl/meson.build
+(cherry picked from commit 8b5a51210302a0ff09bf112efe3ca4555fe25a3b)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/meson.build | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/gst-libs/gst/gl/meson.build b/gst-libs/gst/gl/meson.build
+index a30348d..1c4c371 100644
+--- a/gst-libs/gst/gl/meson.build
++++ b/gst-libs/gst/gl/meson.build
+@@ -991,6 +991,7 @@ if need_platform_egl != 'no' and need_win_viv_fb != 'no'
+       'viv-fb/gstglviv-fb.h',
+       'viv-fb/gstgldisplay_viv_fb.h',
+     ])
++    install_headers(gl_viv_fb_headers, subdir : 'gstreamer-1.0/gst/gl/viv-fb')
+   endif
+ endif
+ 
+-- 
+2.43.0
+

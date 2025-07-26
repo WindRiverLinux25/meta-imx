@@ -1,0 +1,65 @@
+From 3c6e2c1e724de2dab917c373a7b6d7c4a57b862d Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 17 Oct 2024 15:27:49 +0800
+Subject: [PATCH 87/91] MMFMWK-9433 decodebin3: workaround to fix try next
+ decoder fail
+
+Upstream-Status: Pending
+
+Owing to decodebin3 time sequence in 1.24.7, trying decoder may comes
+before multiqueue probes caps event. Decoder has no chance to check
+whether set_format() success or not as it's triggered by caps events.
+
+For streams that decoder needs fallback like interleaved streams on
+imx95, decodebin3 will wrongly selects v4l2 decoder, finally report
+error and playback fail.
+
+So make a workaround to setup decoder only after receiving caps event.
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstdecodebin3.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstdecodebin3.c b/gst/playback/gstdecodebin3.c
+index a0c8736..d159d8d 100644
+--- a/gst/playback/gstdecodebin3.c
++++ b/gst/playback/gstdecodebin3.c
+@@ -445,6 +445,9 @@ typedef struct _MultiQueueSlot
+   gboolean is_drained;
+ 
+   DecodebinOutputStream *output;
++
++  /* TRUE if multiqueue probes CAPS event */
++  gboolean probed_caps;
+ } MultiQueueSlot;
+ 
+ /* Streams that are exposed downstream (i.e. output) */
+@@ -3598,6 +3601,7 @@ multiqueue_src_probe (GstPad * pad, GstPadProbeInfo * info,
+         break;
+       case GST_EVENT_CAPS:
+       {
++        slot->probed_caps = TRUE;
+         /* Configure the output slot if needed */
+         mq_slot_check_reconfiguration (slot);
+       }
+@@ -3712,6 +3716,7 @@ create_new_slot (GstDecodebin3 * dbin, GstStreamType type)
+       gst_stream_type_get_name (type));
+   slot = g_new0 (MultiQueueSlot, 1);
+   slot->dbin = dbin;
++  slot->probed_caps = FALSE;
+ 
+   slot->id = dbin->slot_id++;
+ 
+@@ -4234,7 +4239,8 @@ db_output_stream_reconfigure (DecodebinOutputStream * output, GstMessage ** msg)
+     db_output_stream_reset (output);
+ 
+     /* Setup the decoder */
+-    ret = db_output_stream_setup_decoder (output, new_caps, msg);
++    if (slot->probed_caps)
++      ret = db_output_stream_setup_decoder (output, new_caps, msg);
+   }
+ 
+   gst_caps_unref (new_caps);
+-- 
+2.43.0
+

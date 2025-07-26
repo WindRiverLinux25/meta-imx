@@ -1,0 +1,46 @@
+From d8aadc444bcac7e6befc4467832d4f22f88c0d2c Mon Sep 17 00:00:00 2001
+From: Arnaud Pouliquen <arnaud.pouliquen@st.com>
+Date: Thu, 5 Nov 2015 18:47:19 +0100
+Subject: [PATCH 44/91] iec61937: set iec958 boolean before use it
+
+During prepare alsa->iec958  is tested before set.
+Effect is that alsa device is not opened in iec958 mode,
+so AES value are not transmitted to alsa driver.
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=757258
+
+Signed-off-by: Arnaud Pouliquen <arnaud.pouliquen@st.com>
+(cherry picked from commit 80c282b3b918fab28dd75dc14126efcce1674a64)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/alsa/gstalsasink.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/ext/alsa/gstalsasink.c b/ext/alsa/gstalsasink.c
+index 12752eb..ab1d8d6 100644
+--- a/ext/alsa/gstalsasink.c
++++ b/ext/alsa/gstalsasink.c
+@@ -947,6 +947,9 @@ gst_alsasink_prepare (GstAudioSink * asink, GstAudioRingBufferSpec * spec)
+ 
+   alsa = GST_ALSA_SINK (asink);
+ 
++  if (!alsasink_parse_spec (alsa, spec))
++    goto spec_parse;
++
+   if (alsa->iec958) {
+     snd_pcm_close (alsa->handle);
+     alsa->handle = gst_alsa_open_iec958_pcm (GST_OBJECT (alsa), alsa->device);
+@@ -955,9 +958,6 @@ gst_alsasink_prepare (GstAudioSink * asink, GstAudioRingBufferSpec * spec)
+     }
+   }
+ 
+-  if (!alsasink_parse_spec (alsa, spec))
+-    goto spec_parse;
+-
+   CHECK (set_hwparams (alsa), hw_params_failed);
+   CHECK (set_swparams (alsa), sw_params_failed);
+ 
+-- 
+2.43.0
+

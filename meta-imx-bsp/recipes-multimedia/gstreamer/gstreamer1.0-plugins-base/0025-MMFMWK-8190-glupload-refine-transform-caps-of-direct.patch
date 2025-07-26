@@ -1,0 +1,55 @@
+From 981cdb225028f89b615389e1fd7e9fc3fdad3755 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 21 Aug 2018 13:20:29 +0800
+Subject: [PATCH 25/91] MMFMWK-8190 glupload: refine transform caps of
+ directviv uploader
+
+if downstream only accept YUV format (eg, add capsfilter), then
+we should passthrough color format and don't extend to directviv
+support format
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=797002
+
+Conflicts:
+	gst-libs/gst/gl/gstglupload.c
+(cherry picked from commit 839528dabae8ac5ec07a21d0607284d1de05c864)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/gstglupload.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/gl/gstglupload.c b/gst-libs/gst/gl/gstglupload.c
+index 04d22bb..4e9e498 100644
+--- a/gst-libs/gst/gl/gstglupload.c
++++ b/gst-libs/gst/gl/gstglupload.c
+@@ -2465,8 +2465,25 @@ _directviv_upload_transform_caps (gpointer impl, GstGLContext * context,
+     gst_caps_unref (ret);
+     ret = tmp;
+   } else {
+-    ret = gst_caps_from_string (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
++    GstCaps *caps_copy, *caps_intersect;
++    caps_copy = gst_caps_copy (caps);
++    gst_caps_set_simple (caps_copy, "format", G_TYPE_STRING, "RGBA", NULL);
++    caps_intersect = gst_caps_intersect (caps_copy, caps);
++    if (gst_caps_is_empty (caps_intersect)) {
++      ret =
++          _set_caps_features_with_passthrough (caps,
++          GST_CAPS_FEATURE_MEMORY_SYSTEM_MEMORY, passthrough);
++    } else {
++      GstCaps *tmp;
++      tmp = gst_caps_from_string (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
+         (GST_CAPS_FEATURE_MEMORY_SYSTEM_MEMORY, GST_GL_DIRECTVIV_FORMAT));
++      ret =
++          _set_caps_features_with_passthrough (tmp,
++          GST_CAPS_FEATURE_MEMORY_SYSTEM_MEMORY, passthrough);
++      gst_caps_unref (tmp);
++    }
++    gst_caps_unref (caps_copy);
++    gst_caps_unref (caps_intersect);
+   }
+ 
+   gst_caps_features_free (passthrough);
+-- 
+2.43.0
+

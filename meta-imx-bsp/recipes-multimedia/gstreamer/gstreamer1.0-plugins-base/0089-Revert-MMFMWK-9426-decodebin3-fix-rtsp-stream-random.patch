@@ -1,0 +1,29 @@
+From 3784fa77ed50978aec3a717811971d6043b93c0d Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 29 Oct 2024 12:57:27 +0800
+Subject: [PATCH 89/91] Revert "MMFMWK-9426 decodebin3: fix rtsp stream random
+ playback fail with "No suitable plugins found""
+
+Upstream-Status: Pending
+This reverts commit 44e9a2731d9fdfe2b3da3b03398956a83235c183.
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstdecodebin3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstdecodebin3.c b/gst/playback/gstdecodebin3.c
+index d159d8d..0745ea9 100644
+--- a/gst/playback/gstdecodebin3.c
++++ b/gst/playback/gstdecodebin3.c
+@@ -3422,7 +3422,7 @@ update_stream_presence (GstDecodebin3 * dbin, DecodebinCollection * collection)
+     return;
+   }
+ 
+-  if (g_list_length (dbin->slots) == 1 || g_list_length (dbin->slots) !=
++  if (g_list_length (dbin->slots) !=
+       gst_stream_collection_get_size (collection->collection)) {
+     collection->all_streams_present = FALSE;
+     return;
+-- 
+2.43.0
+

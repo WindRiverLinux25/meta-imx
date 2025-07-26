@@ -1,0 +1,46 @@
+From 2e1aeea8fd62505fbce999367ac64f43c1e3af8e Mon Sep 17 00:00:00 2001
+From: Jian Li <jian.li@freescale.com>
+Date: Mon, 23 Jun 2014 14:14:07 +0800
+Subject: [PATCH 04/91] LF-8635 playbin3/playbin2: remove default deinterlace
+ flag
+
+remove default deinterlace flag in playbin3 for i.MX SoCs
+
+Upstream-Status: Inappropriate [i.MX specific]
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstplaybin2.c | 3 +--
+ gst/playback/gstplaybin3.c | 3 +--
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/gst/playback/gstplaybin2.c b/gst/playback/gstplaybin2.c
+index 7f843bd..7cef7d5 100644
+--- a/gst/playback/gstplaybin2.c
++++ b/gst/playback/gstplaybin2.c
+@@ -507,8 +507,7 @@ struct _GstPlayBinClass
+ #define DEFAULT_SUBURI            NULL
+ #define DEFAULT_SOURCE            NULL
+ #define DEFAULT_FLAGS             GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_VIDEO | GST_PLAY_FLAG_TEXT | \
+-                                  GST_PLAY_FLAG_SOFT_VOLUME | GST_PLAY_FLAG_DEINTERLACE | \
+-                                  GST_PLAY_FLAG_SOFT_COLORBALANCE
++                                  GST_PLAY_FLAG_SOFT_VOLUME
+ #define DEFAULT_N_VIDEO           0
+ #define DEFAULT_CURRENT_VIDEO     -1
+ #define DEFAULT_N_AUDIO           0
+diff --git a/gst/playback/gstplaybin3.c b/gst/playback/gstplaybin3.c
+index 3e735c3..e3d876b 100644
+--- a/gst/playback/gstplaybin3.c
++++ b/gst/playback/gstplaybin3.c
+@@ -397,8 +397,7 @@ struct _GstPlayBin3Class
+ #define DEFAULT_URI               NULL
+ #define DEFAULT_SUBURI            NULL
+ #define DEFAULT_FLAGS             GST_PLAY_FLAG_AUDIO | GST_PLAY_FLAG_VIDEO | GST_PLAY_FLAG_TEXT | \
+-                                  GST_PLAY_FLAG_SOFT_VOLUME | GST_PLAY_FLAG_DEINTERLACE | \
+-                                  GST_PLAY_FLAG_SOFT_COLORBALANCE | GST_PLAY_FLAG_BUFFERING
++                                  GST_PLAY_FLAG_SOFT_VOLUME | GST_PLAY_FLAG_BUFFERING
+ #define DEFAULT_CURRENT_VIDEO     -1
+ #define DEFAULT_CURRENT_AUDIO     -1
+ #define DEFAULT_CURRENT_TEXT      -1
+-- 
+2.43.0
+

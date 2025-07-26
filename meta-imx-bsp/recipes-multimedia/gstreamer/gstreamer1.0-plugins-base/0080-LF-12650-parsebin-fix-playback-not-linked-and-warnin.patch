@@ -1,0 +1,75 @@
+From 85eba000e9d1a4b62a3bc63031be52c8fa658eaa Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 26 Jul 2024 09:17:25 +0800
+Subject: [PATCH 80/91] LF-12650 parsebin: fix playback not-linked and warning
+ "Got data flow before stream-start event"
+
+Parsebin set typefind, demux and parser to paused, store stream-start
+and segment events as pipeline is not-linked yet. Then parser starts
+to send first buffer to multiqueue after starting sink task.
+
+At the same time, parsebin is exposing and sending stream-collection
+event to downstream multiqueue which will send sticky stream-start
+and segment event first. If first buffer sent before these events,
+warning log "Got data flow before stream-start event" is printed and
+pipeline reports error not-linked.
+
+To avoid both issues, need to make sure parsebin exposes before
+setting parser to paused.
+
+Upstream-Status: Pending
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstparsebin.c | 28 +++++++++++++++-------------
+ 1 file changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/gst/playback/gstparsebin.c b/gst/playback/gstparsebin.c
+index 180c312..6286b82 100644
+--- a/gst/playback/gstparsebin.c
++++ b/gst/playback/gstparsebin.c
+@@ -2172,6 +2172,21 @@ connect_pad (GstParseBin * parsebin, GstElement * src, GstParsePad * parsepad,
+      * while we're still sending sticky events */
+     GST_PAD_STREAM_LOCK (sinkpad);
+ 
++    if (is_parser_converter) {
++      EXPOSE_LOCK (parsebin);
++      if (parsebin->parse_chain) {
++        if (gst_parse_chain_is_complete (parsebin->parse_chain)) {
++          GST_LOG_OBJECT (parsebin,
++              "That was the last dynamic object, now attempting to expose the group");
++          if (!gst_parse_bin_expose (parsebin))
++            GST_WARNING_OBJECT (parsebin, "Couldn't expose group");
++        }
++      } else {
++        GST_DEBUG_OBJECT (parsebin, "No parse chain, new pad ignored");
++      }
++      EXPOSE_UNLOCK (parsebin);
++    }
++
+     if ((gst_element_set_state (element,
+                 GST_STATE_PAUSED)) == GST_STATE_CHANGE_FAILURE ||
+         !send_sticky_events (parsebin, pad)) {
+@@ -2526,19 +2541,6 @@ pad_added_cb (GstElement * element, GstPad * pad, GstParseChain * chain)
+   analyze_new_pad (parsebin, element, pad, caps, chain);
+   if (caps)
+     gst_caps_unref (caps);
+-
+-  EXPOSE_LOCK (parsebin);
+-  if (parsebin->parse_chain) {
+-    if (gst_parse_chain_is_complete (parsebin->parse_chain)) {
+-      GST_LOG_OBJECT (parsebin,
+-          "That was the last dynamic object, now attempting to expose the group");
+-      if (!gst_parse_bin_expose (parsebin))
+-        GST_WARNING_OBJECT (parsebin, "Couldn't expose group");
+-    }
+-  } else {
+-    GST_DEBUG_OBJECT (parsebin, "No parse chain, new pad ignored");
+-  }
+-  EXPOSE_UNLOCK (parsebin);
+ }
+ 
+ static void
+-- 
+2.43.0
+

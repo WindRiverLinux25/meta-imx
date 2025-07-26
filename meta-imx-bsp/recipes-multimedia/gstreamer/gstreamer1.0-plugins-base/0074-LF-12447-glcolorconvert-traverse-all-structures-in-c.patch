@@ -1,0 +1,35 @@
+From 1e47551f7b88b79bd5b6ab291b4da68a21077440 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Fri, 24 May 2024 10:13:19 +0800
+Subject: [PATCH 74/91] LF-12447 glcolorconvert: traverse all structures in
+ caps when transform_caps
+
+This is used to avoid negotiation failure between glcolorconvert
+and downstream element.
+
+Upstream-Status: Pending
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/6908>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/gstglcolorconvert.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/gst-libs/gst/gl/gstglcolorconvert.c b/gst-libs/gst/gl/gstglcolorconvert.c
+index 7f37c25..e1d8b13 100644
+--- a/gst-libs/gst/gl/gstglcolorconvert.c
++++ b/gst-libs/gst/gl/gstglcolorconvert.c
+@@ -1201,11 +1201,6 @@ gst_gl_color_convert_caps_transform_format_info (GstGLContext * context,
+     st = gst_caps_get_structure (caps, i);
+     f = gst_caps_get_features (caps, i);
+ 
+-    /* If this is already expressed by the existing caps
+-     * skip this structure */
+-    if (i > 0 && gst_caps_is_subset_structure_full (res, st, f))
+-      continue;
+-
+     format = gst_structure_get_value (st, "format");
+     st = gst_structure_copy (st);
+ 
+-- 
+2.43.0
+

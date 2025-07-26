@@ -1,0 +1,49 @@
+From dc85c31370f5af51f072c4c8e9fb03197a1ab5b0 Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 23 Jul 2024 19:03:37 +0900
+Subject: [PATCH 79/91] LF-12650 parsebin: fix segfault when pad_event_cb is
+ called early
+
+when pad_event_cb is called by stream start, there is chance that
+parser chain is not realy and cause segfault, so only access the pointer
+when handle eos event
+
+Upstream-Status: Pending
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstparsebin.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/gst/playback/gstparsebin.c b/gst/playback/gstparsebin.c
+index 6ad9e89..180c312 100644
+--- a/gst/playback/gstparsebin.c
++++ b/gst/playback/gstparsebin.c
+@@ -2482,16 +2482,19 @@ pad_event_cb (GstPad * pad, GstPadProbeInfo * info, gpointer data)
+ {
+   GstEvent *event = GST_PAD_PROBE_INFO_EVENT (info);
+   GstPendingPad *ppad = (GstPendingPad *) data;
+-  GstParseChain *chain = ppad->chain;
+-  GstParseBin *parsebin = chain->parsebin;
+ 
+-  g_assert (ppad);
+-  g_assert (chain);
+-  g_assert (parsebin);
+   switch (GST_EVENT_TYPE (event)) {
+     case GST_EVENT_EOS:
+       GST_DEBUG_OBJECT (pad, "Received EOS on a non final pad, this stream "
+           "ended too early");
++
++      GstParseChain *chain = ppad->chain;
++      GstParseBin *parsebin = chain->parsebin;
++
++      g_assert (ppad);
++      g_assert (chain);
++      g_assert (parsebin);
++
+       chain->deadend = TRUE;
+       chain->drained = TRUE;
+       gst_object_replace ((GstObject **) & chain->current_pad, NULL);
+-- 
+2.43.0
+

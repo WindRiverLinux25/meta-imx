@@ -1,0 +1,42 @@
+From e3921a1b794489a39bf95333d5bcd7124520df87 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Thu, 25 May 2023 12:05:42 +0800
+Subject: [PATCH 68/91] LF-9146 parsebin: skip the element if it fails to send
+ sticky events
+
+If elements in parsebin send sticky events fails, need to skip this
+element.
+
+Upstream-Status: Pending
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/4705>
+Status: pending
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstparsebin.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gst/playback/gstparsebin.c b/gst/playback/gstparsebin.c
+index 8f7f6d2..4f9c19a 100644
+--- a/gst/playback/gstparsebin.c
++++ b/gst/playback/gstparsebin.c
+@@ -2170,7 +2170,8 @@ connect_pad (GstParseBin * parsebin, GstElement * src, GstParsePad * parsepad,
+     GST_PAD_STREAM_LOCK (sinkpad);
+ 
+     if ((gst_element_set_state (element,
+-                GST_STATE_PAUSED)) == GST_STATE_CHANGE_FAILURE) {
++                GST_STATE_PAUSED)) == GST_STATE_CHANGE_FAILURE ||
++        !send_sticky_events (parsebin, pad)) {
+       GstParseElement *dtmp = NULL;
+       GstElement *tmp = NULL;
+       GstMessage *error_msg;
+@@ -2250,7 +2251,6 @@ connect_pad (GstParseBin * parsebin, GstElement * src, GstParsePad * parsepad,
+ 
+       continue;
+     } else {
+-      send_sticky_events (parsebin, pad);
+       /* Everything went well, the spice must flow now */
+       GST_PAD_STREAM_UNLOCK (sinkpad);
+     }
+-- 
+2.43.0
+

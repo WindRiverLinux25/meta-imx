@@ -1,0 +1,249 @@
+From daffc3f7ea461701fc2b5ad610c9170556e57116 Mon Sep 17 00:00:00 2001
+From: Elliot Chen <elliot.chen@nxp.com>
+Date: Wed, 19 Apr 2023 16:29:07 +0800
+Subject: [PATCH 66/91] MMFMWK-9229 playbin3: support audio passthrough with
+ playbin3
+
+playbin3 decode the audio or video with default fixed caps
+without querying the caps of audio sink.Should update it to
+realize the audio passthrough function.
+
+Upstream-Status: Pending
+
+Signed-off-by: Elliot Chen <elliot.chen@nxp.com>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstdecodebin3.c    | 25 +++++++++
+ gst/playback/gstplaybin3.c      | 93 +++++++++++++++++++++++++++++++++
+ gst/playback/gstrawcaps.h       | 26 +++++++++
+ gst/playback/gsturidecodebin3.c |  2 +
+ 4 files changed, 146 insertions(+)
+
+diff --git a/gst/playback/gstdecodebin3.c b/gst/playback/gstdecodebin3.c
+index c06a838..79e2aff 100644
+--- a/gst/playback/gstdecodebin3.c
++++ b/gst/playback/gstdecodebin3.c
+@@ -1981,6 +1981,31 @@ sink_query_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstQuery * query)
+ 
+   GST_DEBUG_OBJECT (sinkpad, "query %" GST_PTR_FORMAT, query);
+ 
++  /* report the caps if needed */
++  if (GST_QUERY_TYPE (query) == GST_QUERY_CAPS) {
++    GstCaps *select_caps = gst_caps_from_string (AUDIO_PASSTHROUGH_CAPS);
++
++    /* report if has new caps which is not in the default caps list */
++    if (gst_caps_is_subset (select_caps, dbin->caps)) {
++      GstCaps *filter;
++
++      gst_query_parse_caps (query, &filter);
++      if (filter) {
++        if (gst_caps_can_intersect (filter, dbin->caps)) {
++          GstCaps *intersection;
++
++          intersection = gst_caps_intersect_full (filter, dbin->caps,
++              GST_CAPS_INTERSECT_FIRST);
++          gst_query_set_caps_result (query, intersection);
++          gst_caps_unref (intersection);
++          gst_caps_unref (select_caps);
++          return TRUE;
++        }
++      }
++    }
++    gst_caps_unref (select_caps);
++  }
++
+   /* We accept any caps, since we will reconfigure ourself internally if the new
+    * stream is incompatible */
+   if (GST_QUERY_TYPE (query) == GST_QUERY_ACCEPT_CAPS) {
+diff --git a/gst/playback/gstplaybin3.c b/gst/playback/gstplaybin3.c
+index e3d876b..52c3d91 100644
+--- a/gst/playback/gstplaybin3.c
++++ b/gst/playback/gstplaybin3.c
+@@ -232,6 +232,7 @@
+ #include "gstplaysink.h"
+ #include "gstsubtitleoverlay.h"
+ #include "gstplaybackutils.h"
++#include "gstrawcaps.h"
+ 
+ GST_DEBUG_CATEGORY_STATIC (gst_play_bin3_debug);
+ #define GST_CAT_DEFAULT gst_play_bin3_debug
+@@ -281,6 +282,12 @@ enum
+   PLAYBIN_STREAM_LAST
+ };
+ 
++static GstStaticCaps default_raw_caps = GST_STATIC_CAPS (DEFAULT_RAW_CAPS);
++#define DEFAULT_CAPS (gst_static_caps_get (&default_raw_caps))
++
++static GstStaticCaps raw_and_passthrough_caps = GST_STATIC_CAPS (RAW_AND_PASSTHROUGH_CAPS);
++#define SELECT_CAPS (gst_static_caps_get (&raw_and_passthrough_caps))
++
+ /* names matching the enum above */
+ static const gchar *stream_type_names[] = {
+   "audio", "video", "text"
+@@ -511,6 +518,7 @@ static void gst_play_bin3_navigation_init (gpointer g_iface,
+     gpointer g_iface_data);
+ static void gst_play_bin3_colorbalance_init (gpointer g_iface,
+     gpointer g_iface_data);
++static void reconfigure_caps (GstPlayBin3 * playbin);
+ 
+ static void
+ _do_init_type (GType type)
+@@ -1460,6 +1468,7 @@ gst_play_bin3_set_property (GObject * object, guint prop_id,
+     case PROP_AUDIO_SINK:
+       gst_play_bin3_set_sink (playbin, GST_PLAY_SINK_TYPE_AUDIO, "audio",
+           &playbin->audio_sink, g_value_get_object (value));
++      reconfigure_caps (playbin);
+       break;
+     case PROP_VIS_PLUGIN:
+       gst_play_sink_set_vis_plugin (playbin->playsink,
+@@ -2548,6 +2557,85 @@ select_stream_cb (GstElement * decodebin, GstStreamCollection * collection,
+   return -1;
+ }
+ 
++static void
++reconfigure_caps (GstPlayBin3 * playbin)
++{
++  GstElement *actual_sink = NULL;
++  GstPad *sinkpad = NULL;
++  GstCaps *sinkcaps = NULL;
++  GstCaps *select_caps = NULL;
++  GstCaps *currentcaps = NULL;
++
++  if (NULL == playbin->audio_sink) {
++    GST_LOG_OBJECT (playbin, "No audio sink found");
++    return;
++  }
++
++  /* check the sink type */
++  if (!GST_IS_BIN ((GstBin*) playbin->audio_sink)) {
++    actual_sink = playbin->audio_sink;
++  } else {
++    GstIterator *it;
++    GValue item = { 0, };
++    GstIteratorResult rc;
++
++    it = gst_bin_iterate_sinks ((GstBin *) playbin->audio_sink);
++    do {
++      rc = gst_iterator_next (it, &item);
++      if (rc == GST_ITERATOR_OK) {
++        break;
++      }
++    } while (rc != GST_ITERATOR_DONE);
++
++    actual_sink = g_value_get_object (&item);
++    g_value_unset (&item);
++    gst_iterator_free (it);
++  }
++
++  if (NULL == actual_sink) {
++    GST_LOG_OBJECT (playbin, "No sink found");
++    return;
++  }
++
++  sinkpad = gst_element_get_static_pad (actual_sink, "sink");
++  if (NULL == sinkpad) {
++    GST_LOG_OBJECT (playbin, "No pad found");
++    return;
++  }
++
++  sinkcaps = gst_pad_query_caps (sinkpad, NULL);
++  if (NULL == sinkcaps) {
++    GST_LOG_OBJECT (playbin, "No caps found");
++    return;
++  }
++
++  GST_DEBUG_OBJECT (playbin, "sink caps: %s ", gst_caps_to_string(sinkcaps));
++  /* analyze the caps and update uridecodebin caps if needed */
++  if (!gst_caps_is_any (sinkcaps)) {
++    select_caps = gst_caps_from_string (AUDIO_PASSTHROUGH_CAPS);
++
++    if (gst_caps_is_subset (select_caps, sinkcaps)) {
++      /* got the selected caps, update it */
++      g_object_set (playbin->uridecodebin, "caps",
++          SELECT_CAPS, NULL);
++      GST_LOG_OBJECT (playbin, "update and add the selected caps");
++    } else {
++      g_object_get (playbin->uridecodebin, "caps", &currentcaps, NULL);
++      if (gst_caps_is_subset (select_caps, currentcaps)) {
++        /* restore the default caps if it has select caps */
++        g_object_set (playbin->uridecodebin, "caps",
++          DEFAULT_CAPS, NULL);
++        GST_LOG_OBJECT (playbin, "update to the default caps");
++      }
++      gst_caps_unref (currentcaps);
++    }
++    gst_caps_unref (select_caps);
++  }
++
++  gst_caps_unref (sinkcaps);
++  gst_object_unref (sinkpad);
++}
++
+ /* We get called when the selected stream types change and
+  * reconfiguration of output (i.e. playsink and potential combiners)
+  * are required.
+@@ -2646,6 +2734,11 @@ reconfigure_output (GstPlayBin3 * playbin)
+ 
+         }
+       }
++
++      /* update caps for audio passthrough */
++      if (combine->stream_type == GST_STREAM_TYPE_AUDIO) {
++        reconfigure_caps (playbin);
++      }
+     }
+   }
+ 
+diff --git a/gst/playback/gstrawcaps.h b/gst/playback/gstrawcaps.h
+index a3f2c00..a8aa9a1 100644
+--- a/gst/playback/gstrawcaps.h
++++ b/gst/playback/gstrawcaps.h
+@@ -37,6 +37,32 @@ G_BEGIN_DECLS
+     "closedcaption/x-cea-708; " \
+     "application/x-onvif-metadata; "
+ 
++#define AUDIO_PASSTHROUGH_CAPS \
++    "audio/x-ac3, framed = (boolean) true;" \
++    "audio/x-eac3, framed = (boolean) true, alignment = (string) iec61937; "\
++    "audio/x-dts, framed = (boolean) true, " \
++      "block-size = (int) { 512, 1024, 2048 }; " \
++    "audio/mpeg, mpegversion = (int) 1, " \
++      "mpegaudioversion = (int) [ 1, 3 ], parsed = (boolean) true;"
++
++#define RAW_AND_PASSTHROUGH_CAPS \
++        "audio/x-ac3, framed = (boolean) true;" \
++        "audio/x-eac3, framed = (boolean) true, alignment = (string) iec61937; "\
++        "audio/x-dts, framed = (boolean) true, " \
++          "block-size = (int) { 512, 1024, 2048 }; " \
++        "audio/mpeg, mpegversion = (int) 1, " \
++          "mpegaudioversion = (int) [ 1, 3 ], parsed = (boolean) true; "\
++        "video/x-raw(ANY); " \
++        "audio/x-raw(ANY); " \
++        "text/x-raw(ANY); " \
++        "subpicture/x-dvd; " \
++        "subpicture/x-dvb; " \
++        "subpicture/x-xsub; " \
++        "subpicture/x-pgs; " \
++        "closedcaption/x-cea-608; " \
++        "closedcaption/x-cea-708; " \
++        "application/x-onvif-metadata; "
++
+ G_END_DECLS
+ 
+ #endif /* __GST_RAW_CAPS__ */
+diff --git a/gst/playback/gsturidecodebin3.c b/gst/playback/gsturidecodebin3.c
+index 4b65b94..959241d 100644
+--- a/gst/playback/gsturidecodebin3.c
++++ b/gst/playback/gsturidecodebin3.c
+@@ -1624,6 +1624,8 @@ gst_uri_decode_bin3_set_property (GObject * object, guint prop_id,
+         gst_caps_unref (dec->caps);
+       dec->caps = g_value_dup_boxed (value);
+       GST_OBJECT_UNLOCK (dec);
++      /* need update caps because playsink may have some caps which is not in the raw caps list */
++      g_object_set (dec->decodebin, "caps", dec->caps, NULL);
+       break;
+     case PROP_INSTANT_URI:
+       GST_OBJECT_LOCK (dec);
+-- 
+2.43.0
+

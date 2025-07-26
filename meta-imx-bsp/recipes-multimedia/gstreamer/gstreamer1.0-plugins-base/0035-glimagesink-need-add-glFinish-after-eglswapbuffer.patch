@@ -1,0 +1,47 @@
+From c4c7e26dfc9440999d45854804ac8fd19223bb1b Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Thu, 28 Dec 2017 16:37:20 +0800
+Subject: [PATCH 35/91] glimagesink: need add glFinish after eglswapbuffer
+
+when video playback using glimagesink, video tearing occurs. eglswapbuffer
+is an async call that is to say the buffer maybe still used by GPU
+but we are already prepare next buffer.
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=791937
+
+(cherry picked from commit 58a3fdd0ba2a1c20ad6b35a6b2dc574930c4c93d)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/egl/gstglcontext_egl.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/gst-libs/gst/gl/egl/gstglcontext_egl.c b/gst-libs/gst/gl/egl/gstglcontext_egl.c
+index e7f767e..569be4d 100644
+--- a/gst-libs/gst/gl/egl/gstglcontext_egl.c
++++ b/gst-libs/gst/gl/egl/gstglcontext_egl.c
+@@ -36,6 +36,7 @@
+ #include "gstegl.h"
+ #include "../utils/opengl_versions.h"
+ #include "../utils/gles_versions.h"
++#include "../gstglfuncs.h"
+ 
+ #if GST_GL_HAVE_WINDOW_X11
+ #include "../x11/gstglwindow_x11.h"
+@@ -1303,10 +1304,13 @@ static void
+ gst_gl_context_egl_swap_buffers (GstGLContext * context)
+ {
+   GstGLContextEGL *egl;
++  const GstGLFuncs *gl;
+ 
+   egl = GST_GL_CONTEXT_EGL (context);
++  gl = context->gl_vtable;
+ 
+   eglSwapBuffers (egl->egl_display, egl->egl_surface);
++  gl->Finish();
+ }
+ 
+ static GstGLAPI
+-- 
+2.43.0
+

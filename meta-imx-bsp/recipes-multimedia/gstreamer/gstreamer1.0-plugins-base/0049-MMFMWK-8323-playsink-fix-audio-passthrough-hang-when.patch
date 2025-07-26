@@ -1,0 +1,42 @@
+From a9a7d3597f696a31fdb6ac9fc2f0bd8241d83b9b Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Tue, 2 Jul 2019 12:52:00 +0800
+Subject: [PATCH 49/91] MMFMWK-8323 playsink: fix audio passthrough hang when
+ set play rate
+
+when audio passthrough is enable, audio_filter will not
+put into audiochain. When do reconfigure, playsink will
+remove previous audio chain as audio_filter is not match
+with chain->filter (should be NULL). Then playsink will
+remove audio chain and recreate. When remove, streamsynchroinizer
+will release its sinkpad, but sinkpad is in waiting all pad eos
+as audio is eos in fast forward 4X mode and hold stream lock,
+release pad will also try to lock this stream lock and cause hang.
+Need check whether chain->filter is valided first to avoid recreate
+audio chain
+
+Upstream-Status: Pending
+https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/merge_requests/317
+
+(cherry picked from commit cfa26525c865ca66d004cb84f374baec35b37d96)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst/playback/gstplaysink.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gst/playback/gstplaysink.c b/gst/playback/gstplaysink.c
+index f2dc616..7c38e81 100644
+--- a/gst/playback/gstplaysink.c
++++ b/gst/playback/gstplaysink.c
+@@ -3549,7 +3549,7 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
+       /* try to reactivate the chain */
+       if ((playsink->audio_sink
+               && playsink->audio_sink != playsink->audiochain->sink)
+-          || (playsink->audio_filter
++          || (playsink->audio_filter && playsink->audiochain->filter
+               && playsink->audio_filter != playsink->audiochain->filter)
+           || !setup_audio_chain (playsink, raw)) {
+         GST_DEBUG_OBJECT (playsink, "removing current audio chain");
+-- 
+2.43.0
+

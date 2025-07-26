@@ -1,0 +1,55 @@
+From 82b8a63aa6aa2624b6412423b05ccb54975e54ec Mon Sep 17 00:00:00 2001
+From: Haihua Hu <jared.hu@nxp.com>
+Date: Wed, 13 Sep 2017 16:42:21 +0800
+Subject: [PATCH 18/91] glupload: add crop meta support in dmafd uploader
+
+get video crop meta from input buffer and update video info
+
+Upstream-Status: Pending
+https://bugzilla.gnome.org/show_bug.cgi?id=787616
+
+(cherry picked from commit 8557c5e1ef98aa81118fed32802a20349ada00c8)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/gl/gstglupload.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/gst-libs/gst/gl/gstglupload.c b/gst-libs/gst/gl/gstglupload.c
+index 3f4ee0c..04d22bb 100644
+--- a/gst-libs/gst/gl/gstglupload.c
++++ b/gst-libs/gst/gl/gstglupload.c
+@@ -1447,6 +1447,7 @@ _dma_buf_upload_accept (gpointer impl, GstBuffer * buffer, GstCaps * in_caps,
+   GstVideoInfo *out_info = &dmabuf->out_info;
+   guint n_planes;
+   GstVideoMeta *meta;
++  GstVideoCropMeta *crop;
+   guint n_mem;
+   GstMemory *mems[GST_VIDEO_MAX_PLANES];
+   GstMemory *previous_mem = NULL;
+@@ -1457,6 +1458,7 @@ _dma_buf_upload_accept (gpointer impl, GstBuffer * buffer, GstCaps * in_caps,
+ 
+   n_mem = gst_buffer_n_memory (buffer);
+   meta = gst_buffer_get_video_meta (buffer);
++  crop = gst_buffer_get_video_crop_meta(buffer);
+ 
+   if (!dmabuf->upload->context->gl_vtable->EGLImageTargetTexture2D)
+     return FALSE;
+@@ -1529,6 +1531,15 @@ _dma_buf_upload_accept (gpointer impl, GstBuffer * buffer, GstCaps * in_caps,
+       in_info->stride[i] = meta->stride[i];
+     }
+   }
++  
++  if (crop) {
++    in_info->width = MIN (crop->width, in_info->width);
++    in_info->height = MIN (crop->height, in_info->height);
++
++    GST_DEBUG_OBJECT (dmabuf->upload, "got crop meta (%d)x(%d)",
++        in_info->width, in_info->height);
++    gst_buffer_remove_meta (buffer, (GstMeta *)crop);
++  }
+ 
+   /* We cannot have multiple dmabuf per plane */
+   if (n_mem > n_planes) {
+-- 
+2.43.0
+

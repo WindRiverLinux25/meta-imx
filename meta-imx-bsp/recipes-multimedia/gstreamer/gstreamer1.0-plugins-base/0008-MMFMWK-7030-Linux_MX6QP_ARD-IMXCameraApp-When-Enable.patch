@@ -1,0 +1,48 @@
+From 3f6cd1e643f26d2a125de9445560bbc9e1b23022 Mon Sep 17 00:00:00 2001
+From: Song Bing <b06498@freescale.com>
+Date: Mon, 11 Jan 2016 14:51:17 +0800
+Subject: [PATCH 08/91] MMFMWK-7030 [Linux_MX6QP_ARD]IMXCameraApp:When Enabled
+ "save time to image" item, preview, find the time can not display completely.
+ 100%
+
+As IPU need 8 pixels alignment, add one workaround in base text overlay
+to generate 8 pixels alignment text video buffer. The side effect should
+cause all text a little smaller.
+
+Upstream-Status: Inappropriate [i.MX specific]
+
+Signed-off-by: Song Bing b06498@freescale.com
+(cherry picked from commit 265d56846c51da30ab864ac6eb79a50005def560)
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ ext/pango/gstbasetextoverlay.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/ext/pango/gstbasetextoverlay.c b/ext/pango/gstbasetextoverlay.c
+index 08c6b97..8b63ed5 100644
+--- a/ext/pango/gstbasetextoverlay.c
++++ b/ext/pango/gstbasetextoverlay.c
+@@ -1727,6 +1727,10 @@ gst_base_text_overlay_render_pangocairo (GstBaseTextOverlay * overlay,
+   GstBuffer *buffer;
+   GstMapInfo map;
+ 
++  /* i.MX special, will cause text a little small */
++  overlay->width = GST_ROUND_DOWN_8 (overlay->width);
++  overlay->height = GST_ROUND_DOWN_8 (overlay->height);
++
+   if (overlay->auto_adjust_size) {
+     /* 640 pixel is default */
+     scalef_x = scalef_y = (double) (overlay->width) / DEFAULT_SCALE_BASIS;
+@@ -1887,6 +1891,9 @@ gst_base_text_overlay_render_pangocairo (GstBaseTextOverlay * overlay,
+   scalef_x *= overlay->render_scale;
+   scalef_y *= overlay->render_scale;
+ 
++ GST_DEBUG_OBJECT (overlay, "Rendering with width %d and height %d "
++      , width, height);
++
+   if (width <= 0 || height <= 0) {
+     GST_DEBUG_OBJECT (overlay,
+         "Overlay is outside video frame. Skipping text rendering");
+-- 
+2.43.0
+

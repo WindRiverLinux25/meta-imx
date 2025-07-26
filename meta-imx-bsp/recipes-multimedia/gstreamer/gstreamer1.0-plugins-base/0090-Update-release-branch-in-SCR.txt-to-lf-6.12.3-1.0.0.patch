@@ -1,0 +1,25 @@
+From 064dfd357b2d7a57131acc600a6ffec86eafcba8 Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Wed, 18 Dec 2024 10:12:28 +0800
+Subject: [PATCH 90/91] Update release branch in SCR.txt to lf-6.12.3-1.0.0
+
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ SCR.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/SCR.txt b/SCR.txt
+index 3c93f58..c441887 100644
+--- a/SCR.txt
++++ b/SCR.txt
+@@ -4,6 +4,6 @@ Outgoing License:            LGPL-2.1
+ License File:                LICENSE.txt
+ Type of Content:             source
+ Description and comments:    Open Source Multimedia Farmework
+-Release Location:            https://github.com/nxp-imx/gstreamer -b lf-6.6.52-2.2.0
++Release Location:            https://github.com/nxp-imx/gstreamer -b lf-6.12.3-1.0.0
+ Origin:                      NXP (LGPL-2.1)
+                              GStreamer (LGPL-2.1+) - http://gstreamer.freedesktop.org/src/gstreamer/
+-- 
+2.43.0
+

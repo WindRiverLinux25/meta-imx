@@ -1,0 +1,53 @@
+From 0cc9bcc16515eb72f28254edce63f12659ba79ca Mon Sep 17 00:00:00 2001
+From: Hou Qi <qi.hou@nxp.com>
+Date: Tue, 11 Apr 2023 16:23:38 +0800
+Subject: [PATCH 65/91] videodecoder: avoid duplicate timestamps for buffers
+ inputted with DTS but need reorder
+
+Some containers like AVI set DTS instead of PTS on the buffer. If the
+input buffer timestamps are DTS, but the decoder reorders frames, then
+needs videodecoder to calculate the PTS for output frames.
+
+For example, the first 4 input buffer timestamps are 0,33ms,66ms,100ms.
+But the decoder output frames sequence is 0->2->1->3.
+
+In such case, videodecoder sets flag reordered_output to TRUE only when
+frame's DTS is smaller that the previous output timestamp currently.
+It causes output frame timestamps to be 0,66ms,66ms,100ms.
+
+To avoid above duplicate timestamp, we need to set reordered_output to
+TRUE when the frame's DTS is larger than any DTS still in the frame list.
+
+Upstream-Status: Pending
+
+Part-of: <https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/4375>
+Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
+---
+ gst-libs/gst/video/gstvideodecoder.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/gst-libs/gst/video/gstvideodecoder.c b/gst-libs/gst/video/gstvideodecoder.c
+index 9a105a7..a25336a 100644
+--- a/gst-libs/gst/video/gstvideodecoder.c
++++ b/gst-libs/gst/video/gstvideodecoder.c
+@@ -3105,6 +3105,9 @@ gst_video_decoder_prepare_finish_frame (GstVideoDecoder *
+         GST_TIME_ARGS (frame->pts));
+   }
+ 
++  if (GST_CLOCK_TIME_IS_VALID (frame->pts) && frame->pts > min_pts)
++    priv->reordered_output = TRUE;
++
+   /* if we detected reordered output, then PTS are void, however those were
+    * obtained; bogus input, subclass etc */
+   if (priv->reordered_output && !frames_without_pts) {
+@@ -3151,7 +3154,6 @@ gst_video_decoder_prepare_finish_frame (GstVideoDecoder *
+     GST_WARNING_OBJECT (decoder,
+         "decreasing timestamp (%" GST_TIME_FORMAT " < %" GST_TIME_FORMAT ")",
+         GST_TIME_ARGS (frame->pts), GST_TIME_ARGS (priv->last_timestamp_out));
+-    priv->reordered_output = TRUE;
+     /* make it a bit less weird downstream */
+     frame->pts = priv->last_timestamp_out;
+   }
+-- 
+2.43.0
+
