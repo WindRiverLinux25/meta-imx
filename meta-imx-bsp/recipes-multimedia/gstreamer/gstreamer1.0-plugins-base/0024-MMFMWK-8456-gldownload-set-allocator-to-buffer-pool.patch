@@ -1,4 +1,4 @@
-From b99b2f84ae427709389cbc068467094502370827 Mon Sep 17 00:00:00 2001
+From afa0ee67360cd83c887cf1069c165dde8f1d2b17 Mon Sep 17 00:00:00 2001
 From: Haihua Hu <jared.hu@nxp.com>
 Date: Fri, 17 May 2019 13:58:09 +0800
 Subject: [PATCH 24/91] MMFMWK-8456 gldownload: set allocator to buffer pool
@@ -15,12 +15,12 @@ Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
  1 file changed, 108 insertions(+), 81 deletions(-)
 
 diff --git a/ext/gl/gstgldownloadelement.c b/ext/gl/gstgldownloadelement.c
-index da1f1dc..108144a 100644
+index da77c10..c85b176 100644
 --- a/ext/gl/gstgldownloadelement.c
 +++ b/ext/gl/gstgldownloadelement.c
-@@ -32,6 +32,10 @@
- #include "gstglelements.h"
+@@ -33,6 +33,10 @@
  #include "gstgldownloadelement.h"
+ #include "gstglutils.h"
  
 +#if GST_GL_HAVE_PHYMEM
 +#include <gst/gl/gstglphymemory.h>
@@ -29,7 +29,7 @@ index da1f1dc..108144a 100644
  GST_DEBUG_CATEGORY_STATIC (gst_gl_download_element_debug);
  #define GST_CAT_DEFAULT gst_gl_download_element_debug
  
-@@ -775,7 +779,8 @@ gst_gl_buffer_pool_nvmm_new (GstGLContext * context)
+@@ -776,7 +780,8 @@ gst_gl_buffer_pool_nvmm_new (GstGLContext * context)
  G_DEFINE_TYPE_WITH_CODE (GstGLDownloadElement, gst_gl_download_element,
      GST_TYPE_GL_BASE_FILTER,
      GST_DEBUG_CATEGORY_INIT (gst_gl_download_element_debug, "gldownloadelement",
@@ -39,7 +39,7 @@ index da1f1dc..108144a 100644
  GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (gldownload, "gldownload",
      GST_RANK_NONE, GST_TYPE_GL_DOWNLOAD_ELEMENT, gl_element_init (plugin));
  
-@@ -1232,6 +1237,25 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
+@@ -1233,6 +1238,25 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
    GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
    GstGLSyncMeta *in_sync_meta;
    gint i, n;
@@ -65,97 +65,97 @@ index da1f1dc..108144a 100644
  
    *outbuf = inbuf;
  
-@@ -1362,6 +1386,89 @@ gst_gl_download_element_transform_meta (GstBaseTransform * bt,
-       meta, inbuf);
+@@ -1381,6 +1405,89 @@ gst_gl_download_element_transform_meta (GstBaseTransform * bt,
+   return TRUE;
  }
  
 +static gboolean
 +gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
-+    GstQuery * decide_query, GstQuery * query)
++	GstQuery * decide_query, GstQuery * query)
 +{
-+  GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
-+  GstGLDownloadElement *download = GST_GL_DOWNLOAD_ELEMENT (bt);
-+  GstAllocationParams params;
-+  GstAllocator *allocator = NULL;
-+  GstBufferPool *pool = NULL;
-+  guint n_pools, i;
-+  GstVideoInfo info;
-+  GstCaps *caps;
-+  GstStructure *config;
-+  gsize size;
++    GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
++    GstGLDownloadElement *download = GST_GL_DOWNLOAD_ELEMENT (bt);
++    GstAllocationParams params;
++    GstAllocator *allocator = NULL;
++    GstBufferPool *pool = NULL;
++    guint n_pools, i;
++    GstVideoInfo info;
++    GstCaps *caps;
++    GstStructure *config;
++    gsize size;
 +
-+  gst_query_parse_allocation (query, &caps, NULL);
-+  if (!gst_video_info_from_caps (&info, caps)) {
-+    GST_WARNING_OBJECT (bt, "invalid caps specified");
-+    return FALSE;
-+  }
++    gst_query_parse_allocation (query, &caps, NULL);
++    if (!gst_video_info_from_caps (&info, caps)) {
++	GST_WARNING_OBJECT (bt, "invalid caps specified");
++	return FALSE;
++    }
 +
-+  GST_DEBUG_OBJECT (bt, "video format is %s",
-+      gst_video_format_to_string (GST_VIDEO_INFO_FORMAT (&info)));
++    GST_DEBUG_OBJECT (bt, "video format is %s",
++	gst_video_format_to_string (GST_VIDEO_INFO_FORMAT (&info)));
 +
-+  gst_allocation_params_init (&params);
++    gst_allocation_params_init (&params);
 +
 +#if GST_GL_HAVE_PHYMEM
-+  if (gst_is_gl_physical_memory_supported_fmt (&info)) {
-+    allocator = gst_phy_mem_allocator_obtain ();
-+    GST_DEBUG_OBJECT (bt, "obtain physical memory allocator %p.", allocator);
-+  }
++    if (gst_is_gl_physical_memory_supported_fmt (&info)) {
++	allocator = gst_phy_mem_allocator_obtain ();
++	GST_DEBUG_OBJECT (bt, "obtain physical memory allocator %p.", allocator);
++    }
 +#endif /* GST_GL_HAVE_PHYMEM */
 +
-+  if (!allocator)
-+    allocator = gst_allocator_find (GST_GL_MEMORY_ALLOCATOR_NAME);
++    if (!allocator)
++	allocator = gst_allocator_find (GST_GL_MEMORY_ALLOCATOR_NAME);
 +
-+  if (!allocator) {
-+    GST_ERROR_OBJECT (bt, "Can't obtain gl memory allocator.");
-+    return FALSE;
-+  }
++    if (!allocator) {
++	GST_ERROR_OBJECT (bt, "Can't obtain gl memory allocator.");
++	return FALSE;
++    }
 +
-+  gst_query_add_allocation_param (query, allocator, &params);
++    gst_query_add_allocation_param (query, allocator, &params);
 +
-+  n_pools = gst_query_get_n_allocation_pools (query);
-+  for (i = 0; i < n_pools; i++) {
-+    gst_query_parse_nth_allocation_pool (query, i, &pool, NULL, NULL, NULL);
++    n_pools = gst_query_get_n_allocation_pools (query);
++    for (i = 0; i < n_pools; i++) {
++	gst_query_parse_nth_allocation_pool (query, i, &pool, NULL, NULL, NULL);
++	gst_object_unref (pool);
++	pool = NULL;
++    }
++
++    //new buffer pool
++    pool = gst_gl_buffer_pool_new (context);
++    config = gst_buffer_pool_get_config (pool);
++
++    /* the normal size of a frame */
++    size = info.size;
++    gst_buffer_pool_config_set_params (config, caps, size, 0, 0);
++    gst_buffer_pool_config_set_gl_min_free_queue_size (config, 1);
++    gst_buffer_pool_config_add_option (config,
++	GST_BUFFER_POOL_OPTION_GL_SYNC_META);
++
++    //set allocator to buffer pool
++    if (allocator){
++	gst_buffer_pool_config_set_allocator (config, allocator, &params);
++	gst_object_unref (allocator);
++    }
++
++    if (!gst_buffer_pool_set_config (pool, config)) {
++	gst_object_unref (pool);
++	GST_WARNING_OBJECT (bt, "failed setting config");
++	return FALSE;
++    }
++
++    GST_DEBUG_OBJECT (download, "create pool %p", pool);
++
++    //propose 3 buffers for better performance
++    gst_query_add_allocation_pool (query, pool, size, 3, 0);
++
 +    gst_object_unref (pool);
-+    pool = NULL;
-+  }
 +
-+  //new buffer pool
-+  pool = gst_gl_buffer_pool_new (context);
-+  config = gst_buffer_pool_get_config (pool);
-+
-+  /* the normal size of a frame */
-+  size = info.size;
-+  gst_buffer_pool_config_set_params (config, caps, size, 0, 0);
-+  gst_buffer_pool_config_set_gl_min_free_queue_size (config, 1);
-+  gst_buffer_pool_config_add_option (config,
-+      GST_BUFFER_POOL_OPTION_GL_SYNC_META);
-+
-+  //set allocator to buffer pool
-+  if (allocator){
-+    gst_buffer_pool_config_set_allocator (config, allocator, &params);
-+    gst_object_unref (allocator);
-+  }
-+
-+  if (!gst_buffer_pool_set_config (pool, config)) {
-+    gst_object_unref (pool);
-+    GST_WARNING_OBJECT (bt, "failed setting config");
-+    return FALSE;
-+  }
-+
-+  GST_DEBUG_OBJECT (download, "create pool %p", pool);
-+
-+  //propose 3 buffers for better performance
-+  gst_query_add_allocation_pool (query, pool, size, 3, 0);
-+
-+  gst_object_unref (pool);
-+
-+  return TRUE;
++    return TRUE;
 +}
 +
  static gboolean
  gst_gl_download_element_decide_allocation (GstBaseTransform * trans,
      GstQuery * query)
-@@ -1402,86 +1509,6 @@ gst_gl_download_element_src_event (GstBaseTransform * bt, GstEvent * event)
+@@ -1421,86 +1528,6 @@ gst_gl_download_element_src_event (GstBaseTransform * bt, GstEvent * event)
    return GST_BASE_TRANSFORM_CLASS (parent_class)->src_event (bt, event);
  }
  

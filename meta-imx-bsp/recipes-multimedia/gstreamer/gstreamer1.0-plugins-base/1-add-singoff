@@ -1,6 +1,0 @@
-#!/bin/sh
-for each in `ls *.patch`;do num=`grep -m 1 -n "\-\-\-" $each | awk -F : '{print$1}'`;
-sed "$num i\Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>" -i $each;
-done
-
-

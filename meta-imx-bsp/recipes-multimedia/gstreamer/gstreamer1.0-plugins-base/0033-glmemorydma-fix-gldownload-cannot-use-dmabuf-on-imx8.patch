@@ -1,4 +1,4 @@
-From 7238421dc133b5819ac1371b6acfff66478ed816 Mon Sep 17 00:00:00 2001
+From 6ccb5c1775ed6bc2d8ba2cab601f5f16db8a3c8c Mon Sep 17 00:00:00 2001
 From: Haihua Hu <jared.hu@nxp.com>
 Date: Mon, 21 Feb 2022 13:41:34 +0800
 Subject: [PATCH 33/91] glmemorydma: fix gldownload cannot use dmabuf on imx8
@@ -15,10 +15,10 @@ Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
  2 files changed, 15 insertions(+), 13 deletions(-)
 
 diff --git a/ext/gl/gstgldownloadelement.c b/ext/gl/gstgldownloadelement.c
-index 53842de..99fffc9 100644
+index 13f4b00..2bce7b6 100644
 --- a/ext/gl/gstgldownloadelement.c
 +++ b/ext/gl/gstgldownloadelement.c
-@@ -36,7 +36,7 @@
+@@ -37,7 +37,7 @@
  #include <gst/gl/gstglphymemory.h>
  #endif
  
@@ -27,7 +27,7 @@ index 53842de..99fffc9 100644
  #include <gst/gl/gstglmemorydma.h>
  #endif
  
-@@ -1240,13 +1240,17 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
+@@ -1241,13 +1241,17 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
    GstBaseTransformClass *bclass = GST_BASE_TRANSFORM_GET_CLASS (bt);
    GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
    GstGLSyncMeta *in_sync_meta;
@@ -49,7 +49,7 @@ index 53842de..99fffc9 100644
      GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
      GstVideoInfo info;
  
-@@ -1260,8 +1264,7 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
+@@ -1261,8 +1265,7 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
  #endif
  
  #if GST_GL_HAVE_PHYMEM
@@ -59,15 +59,15 @@ index 53842de..99fffc9 100644
      GstVideoInfo info;
      GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
  
-@@ -1433,7 +1436,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
+@@ -1455,7 +1458,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
  
-   GST_DEBUG_OBJECT (bt, "video format is %s", gst_video_format_to_string (fmt));
+     GST_DEBUG_OBJECT (bt, "video format is %s", gst_video_format_to_string (fmt));
  
 -#if GST_GL_HAVE_IONDMA
 +#if GST_GL_HAVE_IONDMA || GST_GL_HAVE_DMABUFHEAPS
-   if (fmt == GST_VIDEO_FORMAT_RGBA || fmt == GST_VIDEO_FORMAT_RGB16) {
-     allocator = gst_gl_memory_dma_allocator_obtain ();
-     GST_DEBUG_OBJECT (bt, "obtain dma memory allocator %p.", allocator);
+     if (fmt == GST_VIDEO_FORMAT_RGBA || fmt == GST_VIDEO_FORMAT_RGB16) {
+ 	allocator = gst_gl_memory_dma_allocator_obtain ();
+ 	GST_DEBUG_OBJECT (bt, "obtain dma memory allocator %p.", allocator);
 diff --git a/gst-libs/gst/gl/gstglmemorydma.c b/gst-libs/gst/gl/gstglmemorydma.c
 index 6cc4f4b..3160cb2 100644
 --- a/gst-libs/gst/gl/gstglmemorydma.c

@@ -1,4 +1,4 @@
-From 7fdf7d3f1aff83ed76c2eedbaf8f571b7fe73245 Mon Sep 17 00:00:00 2001
+From 747bb9f0d020cc1ff9ff7211ce2abff7a1034285 Mon Sep 17 00:00:00 2001
 From: Haihua Hu <jared.hu@nxp.com>
 Date: Fri, 25 Nov 2016 14:48:44 +0800
 Subject: [PATCH 31/91] gldownload: Add ion dmabuf support in gldownload
@@ -14,20 +14,20 @@ Conflicts:
 (cherry picked from commit 11e10b991cdb516599f576bb54065a709f7e642c)
 Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
 ---
- ext/gl/gstgldownloadelement.c    |  40 ++++-
+ ext/gl/gstgldownloadelement.c    |  37 ++++-
  gst-libs/gst/gl/gstgl_fwd.h      |   4 +
  gst-libs/gst/gl/gstglmemorydma.c | 271 +++++++++++++++++++++++++++++++
  gst-libs/gst/gl/gstglmemorydma.h |  82 ++++++++++
  gst-libs/gst/gl/meson.build      |   6 +
- 5 files changed, 397 insertions(+), 6 deletions(-)
+ 5 files changed, 397 insertions(+), 3 deletions(-)
  create mode 100644 gst-libs/gst/gl/gstglmemorydma.c
  create mode 100644 gst-libs/gst/gl/gstglmemorydma.h
 
 diff --git a/ext/gl/gstgldownloadelement.c b/ext/gl/gstgldownloadelement.c
-index 108144a..53842de 100644
+index c85b176..13f4b00 100644
 --- a/ext/gl/gstgldownloadelement.c
 +++ b/ext/gl/gstgldownloadelement.c
-@@ -36,6 +36,10 @@
+@@ -37,6 +37,10 @@
  #include <gst/gl/gstglphymemory.h>
  #endif
  
@@ -38,7 +38,7 @@ index 108144a..53842de 100644
  GST_DEBUG_CATEGORY_STATIC (gst_gl_download_element_debug);
  #define GST_CAT_DEFAULT gst_gl_download_element_debug
  
-@@ -1236,11 +1240,26 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
+@@ -1237,11 +1241,26 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
    GstBaseTransformClass *bclass = GST_BASE_TRANSFORM_GET_CLASS (bt);
    GstGLContext *context = GST_GL_BASE_FILTER (bt)->context;
    GstGLSyncMeta *in_sync_meta;
@@ -66,49 +66,44 @@ index 108144a..53842de 100644
    if (gst_is_gl_physical_memory (glmem)) {
      GstCaps *src_caps;
      GstVideoInfo info;
-@@ -1400,6 +1419,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
-   GstCaps *caps;
-   GstStructure *config;
-   gsize size;
-+  GstVideoFormat fmt;
+@@ -1419,6 +1438,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
+     GstCaps *caps;
+     GstStructure *config;
+     gsize size;
++    GstVideoFormat fmt;
  
-   gst_query_parse_allocation (query, &caps, NULL);
-   if (!gst_video_info_from_caps (&info, caps)) {
-@@ -1407,13 +1427,21 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
-     return FALSE;
-   }
+     gst_query_parse_allocation (query, &caps, NULL);
+     if (!gst_video_info_from_caps (&info, caps)) {
+@@ -1431,8 +1451,19 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
  
--  GST_DEBUG_OBJECT (bt, "video format is %s",
--      gst_video_format_to_string (GST_VIDEO_INFO_FORMAT (&info)));
--
-   gst_allocation_params_init (&params);
+     gst_allocation_params_init (&params);
  
-+  fmt = GST_VIDEO_INFO_FORMAT (&info);
++    fmt = GST_VIDEO_INFO_FORMAT (&info);
 +
-+  GST_DEBUG_OBJECT (bt, "video format is %s", gst_video_format_to_string (fmt));
++    GST_DEBUG_OBJECT (bt, "video format is %s", gst_video_format_to_string (fmt));
 +
 +#if GST_GL_HAVE_IONDMA
-+  if (fmt == GST_VIDEO_FORMAT_RGBA || fmt == GST_VIDEO_FORMAT_RGB16) {
-+    allocator = gst_gl_memory_dma_allocator_obtain ();
-+    GST_DEBUG_OBJECT (bt, "obtain dma memory allocator %p.", allocator);
-+  }
++    if (fmt == GST_VIDEO_FORMAT_RGBA || fmt == GST_VIDEO_FORMAT_RGB16) {
++	allocator = gst_gl_memory_dma_allocator_obtain ();
++	GST_DEBUG_OBJECT (bt, "obtain dma memory allocator %p.", allocator);
++    }
 +#endif
 +
  #if GST_GL_HAVE_PHYMEM
--  if (gst_is_gl_physical_memory_supported_fmt (&info)) {
-+  if (!allocator && gst_is_gl_physical_memory_supported_fmt (&info)) {
-     allocator = gst_phy_mem_allocator_obtain ();
-     GST_DEBUG_OBJECT (bt, "obtain physical memory allocator %p.", allocator);
-   }
-@@ -1448,7 +1476,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
-       GST_BUFFER_POOL_OPTION_GL_SYNC_META);
+-    if (gst_is_gl_physical_memory_supported_fmt (&info)) {
++    if (!allocator && gst_is_gl_physical_memory_supported_fmt (&info)) {
+ 	allocator = gst_phy_mem_allocator_obtain ();
+ 	GST_DEBUG_OBJECT (bt, "obtain physical memory allocator %p.", allocator);
+     }
+@@ -1467,7 +1498,7 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
+ 	GST_BUFFER_POOL_OPTION_GL_SYNC_META);
  
-   //set allocator to buffer pool
--  if (allocator){
-+  if (allocator) {
-     gst_buffer_pool_config_set_allocator (config, allocator, &params);
-     gst_object_unref (allocator);
-   }
+     //set allocator to buffer pool
+-    if (allocator){
++    if (allocator) {
+ 	gst_buffer_pool_config_set_allocator (config, allocator, &params);
+ 	gst_object_unref (allocator);
+     }
 diff --git a/gst-libs/gst/gl/gstgl_fwd.h b/gst-libs/gst/gl/gstgl_fwd.h
 index 28af5c4..630dea1 100644
 --- a/gst-libs/gst/gl/gstgl_fwd.h
@@ -490,7 +485,7 @@ index 0000000..863425a
 +
 +#endif /* _GST_GL_MEMORY_DMA_H_ */
 diff --git a/gst-libs/gst/gl/meson.build b/gst-libs/gst/gl/meson.build
-index c234c27..38df43a 100644
+index 88d0ab0..c3b285f 100644
 --- a/gst-libs/gst/gl/meson.build
 +++ b/gst-libs/gst/gl/meson.build
 @@ -572,6 +572,12 @@ if need_platform_egl != 'no'
