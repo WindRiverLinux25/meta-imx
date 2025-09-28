@@ -1,7 +1,7 @@
-From 4de3da318ba45176e640db82dcc61ce96e2ee7c9 Mon Sep 17 00:00:00 2001
+From 053492d1fe9d1c13605869e7443d1e4c942a30c3 Mon Sep 17 00:00:00 2001
 From: Song Bing <bing.song@nxp.com>
 Date: Thu, 30 Aug 2018 14:26:11 -0700
-Subject: [PATCH 35/75] v4l2videodec: Add lock for queue and stream off
+Subject: [PATCH 35/71] v4l2videodec: Add lock for queue and stream off
 
 Add lock for queue and stream off, or v4l2 core will complain it.
 
@@ -16,11 +16,11 @@ Conflicts:
 (cherry picked from commit 6c5aa754ce667133ea3b11a6ebb67ed913763e41)
 Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
 ---
- sys/v4l2/gstv4l2bufferpool.c | 19 +++++++++++++++----
- 1 file changed, 15 insertions(+), 4 deletions(-)
+ sys/v4l2/gstv4l2bufferpool.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
 
 diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
-index 29f3d9f..4b5051a 100644
+index 41136a2..ef9f77c 100644
 --- a/sys/v4l2/gstv4l2bufferpool.c
 +++ b/sys/v4l2/gstv4l2bufferpool.c
 @@ -733,6 +733,8 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
@@ -32,16 +32,15 @@ index 29f3d9f..4b5051a 100644
    switch (obj->mode) {
      case GST_V4L2_IO_MMAP:
      case GST_V4L2_IO_USERPTR:
-@@ -774,6 +776,8 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+@@ -774,6 +776,7 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
        g_atomic_int_add (&pool->num_queued, -1);
      }
    }
-+
 +  GST_OBJECT_UNLOCK (pool);
  }
  
- static gboolean
-@@ -1053,11 +1057,12 @@ gst_v4l2_buffer_pool_orphan (GstV4l2Object * v4l2object)
+ static void
+@@ -1064,11 +1067,12 @@ gst_v4l2_buffer_pool_orphan (GstV4l2Object * v4l2object)
    GST_DEBUG_OBJECT (pool, "orphaning pool");
    gst_buffer_pool_set_active (bpool, FALSE);
  
@@ -55,7 +54,7 @@ index 29f3d9f..4b5051a 100644
    ret = gst_v4l2_allocator_orphan (pool->vallocator);
    if (ret)
      pool->orphaned = TRUE;
-@@ -1266,9 +1271,13 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+@@ -1277,9 +1281,13 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
  
    GST_LOG_OBJECT (pool, "dequeueing a buffer");
  
@@ -70,7 +69,7 @@ index 29f3d9f..4b5051a 100644
    if (res != GST_FLOW_OK)
      goto dqbuf_failed;
  
-@@ -1291,11 +1300,11 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+@@ -1302,11 +1310,11 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
  
    pool->buffers[group->buffer.index] = NULL;
    if (g_atomic_int_dec_and_test (&pool->num_queued)) {
@@ -84,7 +83,7 @@ index 29f3d9f..4b5051a 100644
    if (group->buffer.flags & V4L2_BUF_FLAG_LAST &&
        group->planes[0].bytesused == 0) {
      GST_DEBUG_OBJECT (pool, "Empty last buffer, signalling eos.");
-@@ -1447,10 +1456,12 @@ eos:
+@@ -1458,10 +1466,12 @@ eos:
    }
  dqbuf_failed:
    {

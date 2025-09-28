@@ -1,7 +1,7 @@
-From 907a2313ed5ceb8d0c45ecd9656e6bac959ee62a Mon Sep 17 00:00:00 2001
+From 226884c6e040a1a4bcf50a8c13d1ba8611ccd7fb Mon Sep 17 00:00:00 2001
 From: Hou Qi <qi.hou@nxp.com>
 Date: Thu, 16 Jun 2022 14:38:24 +0800
-Subject: [PATCH 36/75] MMFMWK-9092 v4l2: Fix race condition between orphaning
+Subject: [PATCH 36/71] MMFMWK-9092 v4l2: Fix race condition between orphaning
  and stopping allocator
 
 allocator_stop() may be called when allocator is orphaning. It causes dmafd
@@ -13,11 +13,11 @@ Upstream-Status: Pending
 Signed-off-by: Hou Qi <qi.hou@nxp.com>
 Signed-off-by: Xiaolei Wang <xiaolei.wang@windriver.com>
 ---
- sys/v4l2/gstv4l2bufferpool.c | 12 +++++-------
- 1 file changed, 5 insertions(+), 7 deletions(-)
+ sys/v4l2/gstv4l2bufferpool.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
 
 diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
-index 4b5051a..256eafe 100644
+index ef9f77c..e81983f 100644
 --- a/sys/v4l2/gstv4l2bufferpool.c
 +++ b/sys/v4l2/gstv4l2bufferpool.c
 @@ -733,8 +733,6 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
@@ -29,16 +29,15 @@ index 4b5051a..256eafe 100644
    switch (obj->mode) {
      case GST_V4L2_IO_MMAP:
      case GST_V4L2_IO_USERPTR:
-@@ -776,8 +774,6 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
+@@ -776,7 +774,6 @@ gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
        g_atomic_int_add (&pool->num_queued, -1);
      }
    }
--
 -  GST_OBJECT_UNLOCK (pool);
  }
  
- static gboolean
-@@ -1023,8 +1019,11 @@ gst_v4l2_buffer_pool_stop (GstBufferPool * bpool)
+ static void
+@@ -1033,8 +1030,11 @@ gst_v4l2_buffer_pool_stop (GstBufferPool * bpool)
      pool->other_pool = NULL;
    }
  
@@ -51,7 +50,7 @@ index 4b5051a..256eafe 100644
  
    ret = GST_BUFFER_POOL_CLASS (parent_class)->stop (bpool);
  
-@@ -1057,12 +1056,11 @@ gst_v4l2_buffer_pool_orphan (GstV4l2Object * v4l2object)
+@@ -1067,12 +1067,11 @@ gst_v4l2_buffer_pool_orphan (GstV4l2Object * v4l2object)
    GST_DEBUG_OBJECT (pool, "orphaning pool");
    gst_buffer_pool_set_active (bpool, FALSE);
  
