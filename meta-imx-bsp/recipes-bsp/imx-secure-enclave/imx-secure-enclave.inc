@@ -21,6 +21,8 @@ EXTRA_OEMAKE = "PLAT=${PLAT} OPENSSL_PATH=${STAGING_INCDIR} MBEDTLS_PATH=${STAGI
 
 TARGET_CC_ARCH += "${LDFLAGS}"
 
+PARALLEL_MAKE = "-j1"
+
 do_install() {
 	oe_runmake -C ${S} DESTDIR=${D} install_tests
 }
