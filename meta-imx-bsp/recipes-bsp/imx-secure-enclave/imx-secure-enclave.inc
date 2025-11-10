@@ -13,6 +13,11 @@ SECURE_ENCLAVE_LIB_SRC ?= "git://github.com/NXP/imx-secure-enclave.git;protocol=
 SRCBRANCH = "lf-6.12.3_1.0.0"
 SRCREV = "1130c8bb820881ad037ba3f060e7fa70635fae3c"
 
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+SRC_URI:append = " \
+        file://0001-makefile-serialize-install_version-and-clean_ver_hfi.patch \
+"
+
 S = "${WORKDIR}/git"
 
 PLAT ?= "UNDEFINED"

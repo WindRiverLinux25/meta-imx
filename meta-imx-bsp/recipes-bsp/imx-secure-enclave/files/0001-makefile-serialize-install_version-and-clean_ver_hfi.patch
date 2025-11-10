@@ -1,0 +1,37 @@
+From e022421c4f00343f3bb13709939486f25c920c82 Mon Sep 17 00:00:00 2001
+From: Ruiqiang Hao <Ruiqiang.Hao@windriver.com>
+Date: Mon, 10 Nov 2025 06:24:29 +0000
+Subject: [PATCH] makefile: serialize install_version and clean_ver_hfile
+
+Use .WAIT to ensure install_version is completed before building
+and clean_ver_hfile is executed after building. This prevents
+dependency issues in parallel builds (e.g., -j64), such as missing
+headers or incorrectly generated files.
+
+Upstream-Status: Submitted [https://github.com/nxp-imx/imx-secure-enclave/pull/2]
+
+Signed-off-by: Ruiqiang Hao <Ruiqiang.Hao@windriver.com>
+---
+ Makefile | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 7af9934..d377b2c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -83,9 +83,9 @@ all_libs:= $(SHE_LIB) $(NVM_LIB) $(HSM_LIB)
+ 
+ 
+ # Make targets, must need NVM-Daemon to run successfully.
+-tests: | install_version build_tests  clean_ver_hfile
+-libs: | install_version build_libs clean_ver_hfile
+-all: | install_version build_all clean_ver_hfile
++tests: | install_version .WAIT build_tests .WAIT clean_ver_hfile
++libs: | install_version .WAIT build_libs .WAIT clean_ver_hfile
++all: | install_version .WAIT build_all .WAIT clean_ver_hfile
+ 
+ build_tests: $(all_tests) $(NVM_DAEMON)
+ build_libs: $(all_libs) $(NVM_DAEMON)
+-- 
+2.49.1
+
