@@ -14,6 +14,7 @@ SRCREV = "e3219a5a73445219df605d1492687918d488055c"
 
 FILESEXTRAPATHS:prepend := "${COREBASE}/meta/recipes-bsp/u-boot/files:"
 SRC_URI += "file://CVE-2024-42040.patch \
+	    file://CVE-2025-24857.patch \
 "
 
 DEPENDS += " \
