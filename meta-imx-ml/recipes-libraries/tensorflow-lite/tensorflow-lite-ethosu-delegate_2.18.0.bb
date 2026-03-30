@@ -43,6 +43,10 @@ do_configure:prepend() {
     # There is no Fortran compiler in the toolchain, but bitbake sets this variable anyway
     # with unavailable binary.
     export FC=""
+
+    if ! grep -q 'TLS_VERSION 1.3' ${UNPACKDIR}/tfgit/tensorflow/lite/cmake/DownloadKleidiAI.cmake; then
+       sed -i '/BINARY_DIR "${CMAKE_BINARY_DIR}\/kleidiai"/a\  TLS_VERSION 1.3' ${UNPACKDIR}/tfgit/tensorflow/lite/cmake/DownloadKleidiAI.cmake
+    fi
 }
 
 do_install() {
